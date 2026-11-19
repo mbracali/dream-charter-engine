@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <ctime>
 #include <fstream>
 #include <sstream>
@@ -128,6 +129,7 @@ bool App::init(int argc, char** argv) {
         else if (a == "--part" && i + 1 < argc) previewPart_ = tunePart_ = argv[++i];
         else if (a == "--forge") forgeAtStart_ = true;
         else if (a == "--selftest") selfTest_ = true;
+        else if (a == "--paste" && i + 1 < argc) pasteAtStart_.push_back(argv[++i]);  // debug: paste into a box
         else if (a == "--one-part") bandView_ = false;  // Song forge: the single-part view
         else if (a == "--panels") showPanels_ = true;   // Song forge: band view with the mixer and settings  // test the editor on the first project, then quit
         else if (a == "--overlay" && i + 1 < argc) overlayAtStart_ = argv[++i];  // details / lyrics / help
@@ -156,12 +158,17 @@ bool App::init(int argc, char** argv) {
     refreshProjects();
     status_ = projectsDir_.empty() ? "Welcome. Choose where your projects are saved." : "Ready. Drop a song to start.";
     for (auto& p : paths) openPath(p);
-    if (current_.empty() && !projects_.empty() && (!shotPath_.empty() || selfTest_)) selectProject(projects_[0].id);
+    if (current_.empty() && !projects_.empty() && (!shotPath_.empty() || selfTest_ || !pasteAtStart_.empty())) selectProject(projects_[0].id);
     if (startScreen_ >= 0) setScreen(Screen(std::clamp(startScreen_, 0, 3)));
     if (seekTo_ > 0) {
         player_.seek(seekTo_);
         viewStart_ = float(std::max(0.0, seekTo_ - 1.0));
     }
+    for (auto& box : pasteAtStart_)
+        if (Project* p = currentProject()) {
+            pasteSheet(*p, box);
+            std::printf("paste %s: %s\n", box.c_str(), status_.c_str());
+        }
     if (forgeAtStart_) forgeSong();
     if (overlayAtStart_ == "details") overlay_ = Overlay::Details;
     else if (overlayAtStart_ == "lyrics") overlay_ = Overlay::Lyrics;
@@ -962,6 +969,19 @@ void App::onKey(SDL_Keycode key, SDL_Keymod mod) {
                 s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
                 editField([&](std::string& v) { v += s; });
             }
+        } else if (key == SDLK_V && focus_ == Focus::None && overlay_ == Overlay::None && screen_ == Screen::Home) {
+            // Cmd/Ctrl+V over an instrument box pastes into it (over Lyrics: the lyrics editor).
+            const int b = boxAt(mouseX_, mouseY_);
+            if (Project* p = currentProject(); p && b >= 0 && b < 3) pasteSheet(*p, kBoxes[b].id);
+            else if (b == 3) {
+                overlay_ = Overlay::Lyrics;
+                focusLyrics();
+                caret_ = lyrics_.size();
+                if (char* clip = SDL_GetClipboardText()) {
+                    insertLyrics(clip);
+                    SDL_free(clip);
+                }
+            }
         } else if (key == SDLK_V && focus_ == Focus::Lyrics) {
             if (char* clip = SDL_GetClipboardText()) {
                 insertLyrics(clip);
@@ -1685,6 +1705,7 @@ void App::drawHelp(float W, float H) {
                 {kCmd + "B", "Collapse / expand the sidebar"},
                 {"Space, Home, Left/Right", "Play / pause, start, back / forward 5 s"},
                 {"Song forge: 1-4", "Easy ... Expert"},
+                {"Song home: Paste / " + kCmd + "V", "Paste a tab, chord sheet or copied file into the box under the mouse"},
                 {"Fine tuning: click", "Add a note (empty spot) or select one"},
                 {"Fine tuning: drag", "Move a note; drag its tail end (or Alt+drag): sustain"},
                 {"Fine tuning: right click", "Delete a note (or Delete / Backspace)"},

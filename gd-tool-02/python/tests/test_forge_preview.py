@@ -90,3 +90,24 @@ def test_the_forge_never_downloads():
             torch.hub.download_url_to_file("https://example.com/model.pt", "/tmp/x")
     finally:
         urllib.request.urlopen, torch.hub.download_url_to_file = saved
+
+
+def test_a_score_in_several_boxes_is_aligned_once(monkeypatch, tmp_path):
+    import ai_charter.reference as reference
+
+    calls = []
+
+    def fake_load_guides(path, mapping, y, sr, tempo, rules, log=print, fidelity="seguir", sections=None, anchors=None):
+        calls.append((Path(path).name, dict(mapping), fidelity))
+        return {inst: f"guide:{inst}" for inst in mapping.values()}
+
+    score, riff = tmp_path / "full.gp5", tmp_path / "riff.mid"
+    monkeypatch.setattr(reference, "load_guides", fake_load_guides)
+    monkeypatch.setattr(forge.sheets, "pick_tracks",
+                        lambda f, inst: {{"guitar": 0, "drums": 3, "bass": 1}[inst]: inst})
+    forge.install_references({"guitar": score, "drums": score, "bass": riff}, {"bass": "corrigir"})
+    guides = reference.load_guides(None, None, None, 0, None, None, log=lambda m: None)
+    assert guides == {"guitar": "guide:guitar", "drums": "guide:drums", "bass": "guide:bass"}
+    assert [c[0] for c in calls] == ["full.gp5", "riff.mid"]
+    assert calls[0][1] == {0: "guitar", 3: "drums"}
+    assert calls[1][2]["bass"] == "corrigir" and calls[0][2]["guitar"] == "seguir"

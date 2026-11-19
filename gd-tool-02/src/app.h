@@ -121,7 +121,7 @@ struct BoxDef {
 };
 inline const BoxDef kBoxes[] = {{"guitar", "Guitar", "tab, MIDI, chords or chart"},
                                 {"bass", "Bass", "tab, MIDI, chords or chart"},
-                                {"drums", "Drums", "tab, MIDI or chart"},
+                                {"drums", "Drums", "drum tab, MIDI or chart"},
                                 {"lyrics", "Lyrics", ".txt / .lrc"}};
 
 struct SheetFile {
@@ -259,6 +259,7 @@ public:
     static std::string kindLabel(const std::string& kind);
     void addSheet(Project& p, const std::string& box, const fs::path& file);
     void removeSheet(Project& p, const std::string& box, const std::string& name);
+    void pasteSheet(Project& p, const std::string& box);
     void toggleSheet(Project& p, const std::string& box, const std::string& name);
     std::string lyricsChoice(const Project& p) const;
     bool hasTypedLyrics(const Project& p) const;
@@ -407,6 +408,8 @@ public:
     int selfTestResult_ = -1;
     double seekTo_ = 0;
     std::string overlayAtStart_;
+    std::vector<std::string> pasteAtStart_;
 };
 
 int runApp(int argc, char** argv);
+bool isAsciiTab(const std::string& text);  // a text tab ("e|--0--|" lines); see python/ascii_tab.py

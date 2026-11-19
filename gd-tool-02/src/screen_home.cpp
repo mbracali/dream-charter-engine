@@ -23,6 +23,66 @@ std::string readHead(const fs::path& file, size_t max = 1 << 20) {
     return data;
 }
 
+std::string readAll(const fs::path& file) { return readHead(file, 1 << 20); }
+
+// "%20" -> " " in a file:// URL.
+std::string urlDecode(const std::string& s) {
+    std::string out;
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '%' && i + 2 < s.size() && std::isxdigit((unsigned char)s[i + 1]) && std::isxdigit((unsigned char)s[i + 2])) {
+            out += char(std::stoi(s.substr(i + 1, 2), nullptr, 16));
+            i += 2;
+        } else {
+            out += s[i];
+        }
+    }
+    return out;
+}
+
+std::string trim(const std::string& s) {
+    const size_t a = s.find_first_not_of(" \t\r\n"), b = s.find_last_not_of(" \t\r\n");
+    return a == std::string::npos ? "" : s.substr(a, b - a + 1);
+}
+
+// A file path from a pasted line: "/path/x.gp5", "file:///path/x.gp5" or "~/x.gp5".
+fs::path pastedPath(std::string line) {
+    line = trim(line);
+    if (line.rfind("file://", 0) == 0) line = urlDecode(line.substr(7));
+    if (!line.empty() && line[0] == '~')
+        if (const char* home = SDL_getenv("HOME")) line = std::string(home) + line.substr(1);
+    if (line.size() > 1 && line.front() == '"' && line.back() == '"') line = line.substr(1, line.size() - 2);
+    return line;
+}
+
+}  // namespace
+
+// Same rule as python/ascii_tab.py is_ascii_tab: at least 3 lines of a short label, a bar
+// line (| or :), then a body of 4+ characters that is at least 40% dashes.
+bool isAsciiTab(const std::string& text) {
+    int count = 0;
+    size_t start = 0;
+    while (start <= text.size()) {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos) end = text.size();
+        const std::string line = text.substr(start, end - start);
+        size_t i = line.find_first_not_of(" \t");
+        size_t j = i;
+        while (j != std::string::npos && j < line.size() && (std::isalnum((unsigned char)line[j]) || line[j] == '#') && j - i < 6) ++j;
+        if (i != std::string::npos && j > i && std::isalpha((unsigned char)line[i])) {
+            while (j < line.size() && line[j] == ' ') ++j;
+            if (j < line.size() && (line[j] == '|' || line[j] == ':')) {
+                std::string body = trim(line.substr(j + 1));
+                const size_t dashes = size_t(std::count(body.begin(), body.end(), '-'));
+                if (body.size() >= 4 && float(dashes) >= float(body.size()) * 0.4f) ++count;
+            }
+        }
+        start = end + 1;
+    }
+    return count >= 3;
+}
+
+namespace {
+
 std::string joinNames(const std::vector<std::string>& names) {
     std::string out;
     for (auto& n : names) out += (out.empty() ? "" : "|") + n;
@@ -44,7 +104,7 @@ std::string App::sheetKind(const fs::path& file, const std::string& box) {
         return "score";
     }
     if (ext == ".chart") return "chart";
-    if (ext == ".txt") return "chords";
+    if (ext == ".txt" || ext == ".tab") return isAsciiTab(readAll(file)) ? "texttab" : ext == ".txt" ? "chords" : "";
     return "";
 }
 
@@ -53,6 +113,7 @@ std::string App::kindLabel(const std::string& kind) {
     if (kind == "score") return "MIDI score";
     if (kind == "chart") return "chart, used as-is";
     if (kind == "chords") return "chord sheet";
+    if (kind == "texttab") return "text tab";
     if (kind == "lyrics") return "lyrics";
     return "not usable";
 }
@@ -102,6 +163,56 @@ void App::addSheet(Project& p, const std::string& box, const fs::path& file) {
     }
     status_ = name + " added to " + box + " (" + kindLabel(kind) + ").";
     logEvent("sheet " + box + ": " + name + " (" + kind + ")");
+}
+
+// Paste on a box: a copied file (Finder / file manager), a pasted path, or text: a text tab
+// or a chord sheet, saved as sheets/<box>/pasted <tab|chords> N.txt.
+void App::pasteSheet(Project& p, const std::string& box) {
+    // A copied file: macOS gives public.file-url, Linux file managers text/uri-list.
+    for (const char* mime : {"public.file-url", "text/uri-list"}) {
+        if (!SDL_HasClipboardData(mime)) continue;
+        size_t len = 0;
+        void* data = SDL_GetClipboardData(mime, &len);
+        std::string urls = data ? std::string(static_cast<const char*>(data), len) : "";
+        SDL_free(data);
+        std::istringstream lines(urls);
+        std::string line;
+        int added = 0;
+        while (std::getline(lines, line)) {
+            const fs::path file = pastedPath(line);
+            if (!line.empty() && line[0] != '#' && fs::is_regular_file(file)) {
+                addSheet(p, box, file);
+                ++added;
+            }
+        }
+        if (added) return;
+    }
+    char* clip = SDL_GetClipboardText();
+    std::string textIn = clip ? clip : "";
+    SDL_free(clip);
+    textIn.erase(std::remove(textIn.begin(), textIn.end(), '\r'), textIn.end());
+    if (trim(textIn).empty()) {
+        status_ = "The clipboard is empty: copy a tab, a chord sheet or a file first.";
+        return;
+    }
+    if (trim(textIn).find('\n') == std::string::npos && fs::is_regular_file(pastedPath(textIn))) {
+        addSheet(p, box, pastedPath(textIn));
+        return;
+    }
+    const bool tab = isAsciiTab(textIn);
+    if (box == "drums" && !tab) {
+        status_ = "Drums take a text drum tab (lines like HH|x-x-x-x-|) or a copied Guitar Pro / MIDI / chart file.";
+        return;
+    }
+    const fs::path dir = p.dir / "sheets" / box;
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    const std::string base = tab ? "pasted tab" : "pasted chords";
+    fs::path file;
+    for (int n = 1; fs::exists(file = dir / (base + " " + std::to_string(n) + ".txt")); ++n) {
+    }
+    std::ofstream(file, std::ios::binary) << textIn << (textIn.back() == '\n' ? "" : "\n");
+    addSheet(p, box, file);
 }
 
 void App::removeSheet(Project& p, const std::string& box, const std::string& name) {
@@ -163,11 +274,13 @@ std::string App::boxSummary(const Project& p, const std::string& box) const {
     for (auto& f : sheetFiles(p, box)) {
         if (!f.used) continue;
         if (f.kind == "chart" && chart.empty()) chart = f.name;
-        else if ((f.kind == "tab" || f.kind == "score") && guide.empty()) guide = f.name;
+        else if ((f.kind == "tab" || f.kind == "score" || f.kind == "texttab") && guide.empty()) guide = f.name + (f.kind == "texttab" ? " (pitches)" : "");  // " (pitches)": text tabs only fix notes
         else if (f.kind == "chords") chords = true;
     }
     if (!chart.empty()) return "Forge uses the chart " + chart + " as-is.";
-    std::string s = guide.empty() ? "Forge charts the " + box + " stem" : "The stem, guided by " + guide;
+    if (box == "drums" && guide.find(" (pitches)") != std::string::npos)
+        return "Drum text tabs alone can't be aligned yet.";
+    std::string s = guide.empty() ? "Forge charts the " + box + " stem" : "Guided by " + guide;
     if (chords) s += " + the chords";
     return s + ".";
 }
@@ -268,9 +381,12 @@ void App::drawBox(Project& p, const BoxDef& def, const SDL_FRect& r) {
     fill({r.x, r.y, r.w, 4 * u_}, c);
     text(r.x + 16 * u_, r.y + 18 * u_, def.label, kCream, 2.25f * u_);
     text(r.x + 16 * u_ + textW(def.label, 2.25f * u_) + 14 * u_, r.y + 23 * u_, def.hint, kMuted, 1.25f * u_,
-         r.w - textW(def.label, 2.25f * u_) - 120 * u_);
-    const float addW = buttonW("+ Add");
+         r.w - textW(def.label, 2.25f * u_) - buttonW("+ Add") - buttonW("Paste") - 60 * u_);
+    const float addW = buttonW("+ Add"), pasteW = buttonW("Paste");
     button(r.x + r.w - addW - 12 * u_, r.y + 14 * u_, "+ Add", [this, box] { showDialog(DialogKind::Sheet, box); }, true, false, 28 * u_);
+    button(r.x + r.w - addW - pasteW - 20 * u_, r.y + 14 * u_, "Paste", [this, box] {
+        if (Project* q = currentProject()) pasteSheet(*q, box);
+    }, true, false, 28 * u_);
 
     auto files = sheetFiles(p, box);
     const float listTop = r.y + 54 * u_, rowH = 28 * u_, footY = r.y + r.h - 28 * u_;

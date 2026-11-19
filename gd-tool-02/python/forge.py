@@ -113,30 +113,41 @@ def block_downloads() -> None:
         pass
 
 
-def install_references(refs: dict[str, Path]) -> None:
+def install_references(refs: dict[str, Path], fidelity_of: dict[str, str] | None = None) -> None:
     """The engine takes one score with a track -> instrument map. Song home gives one file
     per instrument, so its load_guides is replaced by one that loads each file for its own
-    instrument and merges the guides."""
+    instrument and merges the guides. `fidelity`: per instrument (text tabs: "corrigir")."""
     import ai_charter.reference as reference
 
     original = reference.load_guides
 
     def load_all(_path, _mapping, y, sr, tempo, rules, log=print, fidelity=reference.DEFAULT_FIDELITY,
                  sections=None, anchors=None):
-        guides = {}
+        # One call per file: a file used for several instruments (a full Guitar Pro score in
+        # the Guitar and Drums boxes) is aligned once, its pitched tracks carrying the drums.
+        by_file: dict[Path, list[str]] = {}
         for instrument, file in refs.items():
-            mapping = sheets.pick_tracks(file, instrument)
-            if not mapping:
-                log(f"{file.name}: no track fits the {instrument}, not used")
+            by_file.setdefault(file, []).append(instrument)
+        guides = {}
+        for file, instruments in by_file.items():
+            try:  # one bad file must not stop the forge: it is skipped, the stems are charted alone
+                mapping: dict[int, str] = {}
+                for instrument in instruments:
+                    found_tracks = sheets.pick_tracks(file, instrument)
+                    if not found_tracks:
+                        log(f"{file.name}: no track fits the {instrument}, not used for it")
+                    mapping.update(found_tracks)
+                if not mapping:
+                    continue
+                levels = {i: (fidelity_of or {}).get(i, fidelity) for i in reference.GUIDED}
+                found = original(file, mapping, y, sr, tempo, rules, log, levels)
+            except Exception as exc:  # noqa: BLE001
+                log(f"{file.name}: not used ({str(exc).splitlines()[0]})")
                 continue
-            try:
-                found = original(file, mapping, y, sr, tempo, rules, log, fidelity)
-            except Exception as exc:  # noqa: BLE001 - one bad file must not stop the forge
-                log(f"{file.name}: not used ({exc})")
-                continue
-            if instrument in found:
-                guides[instrument] = found[instrument]
-                log(f"{file.name} guides the {instrument}")
+            for instrument in instruments:
+                if instrument in found:
+                    guides[instrument] = found[instrument]
+                    log(f"{file.name} guides the {instrument}")
         return guides
 
     reference.load_guides = load_all
@@ -157,6 +168,17 @@ def write_rules(folder: Path, drum_similarity: float, riff_similarity: float = 0
 
 # ---- the plan: what the sheets say ---------------------------------------------------
 
+def text_tab_score(project: Path, box: str, file: Path) -> Path:
+    """A pasted text tab as a MIDI score in forge/tabs/ (the engine reads MIDI scores)."""
+    import ascii_tab
+
+    out = project / "forge" / "tabs" / f"{box} - {file.stem}.mid"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    count = ascii_tab.to_midi(file.read_text(encoding="utf-8", errors="replace"), out, box)
+    emit("STATUS", f"{file.name}: text tab, {count} notes")
+    return out
+
+
 class Plan:
     def __init__(self, project: Path, doc: dict) -> None:
         forge = doc.get("forge") or {}
@@ -167,6 +189,7 @@ class Plan:
                         if forge.get(f"{p}_source") and str(forge.get(f"{p}_source")) != p}
         parts = ["guitar", "bass", "drums"] + (["keys"] if str(forge.get("keys") or "") == "on" else [])
         self.refs: dict[str, Path] = {}
+        self.fidelity: dict[str, str] = {}  # per instrument; text tabs only correct pitch / chords
         self.charts: dict[str, Path] = {}
         self.chords: Path | None = None
         self.notes: list[str] = []
@@ -175,9 +198,12 @@ class Plan:
                 kind = sheets.kind_of(file, box)
                 if kind == "chart" and box not in self.charts:
                     self.charts[box] = file
-                elif kind in ("tab", "score"):
+                elif kind in ("tab", "score", "texttab"):
                     if box in self.refs:
                         self.notes.append(f"{file.name}: one tab per instrument for now, using {self.refs[box].name}")
+                    elif kind == "texttab":
+                        self.refs[box] = text_tab_score(project, box, file)
+                        self.fidelity[box] = "corrigir"
                     else:
                         self.refs[box] = file
                 elif kind == "chords" and self.chords is None:
@@ -234,14 +260,14 @@ def run_engine(project: Path, plan: Plan, progress: Progress) -> Path:
     block_downloads()
     patch_engine_audio()
     if plan.refs:
-        install_references(plan.refs)
+        install_references(plan.refs, plan.fidelity)
     from ai_charter.pipeline import Options, run
 
     doc = yaml.safe_load((project / "project.yaml").read_text(encoding="utf-8")) or {}
     song = project / str((doc.get("project") or {}).get("audio_file") or "")
     song_info = doc.get("song") or {}
     out = project / "forge"
-    keep = {"lyrics_used.txt"}
+    keep = {"lyrics_used.txt", "tabs"}
     for item in list(out.iterdir()) if out.exists() else []:
         if item.name not in keep:
             shutil.rmtree(item) if item.is_dir() else item.unlink()

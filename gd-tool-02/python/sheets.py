@@ -11,6 +11,9 @@ Kinds (by extension, and for MIDI by content):
     chart   An existing chart (.chart, or a MIDI with PART tracks): used as-is.
     chords  A chord sheet (.txt, Cifra Club / Ultimate Guitar): limits the chords the
             engine recognises and can give the lyrics.
+    texttab A text (ASCII) tab (.txt / .tab: "e|--0--3--|" lines, or drum lines like
+            "HH|x-x-x-|"): converted to a MIDI score (ascii_tab.py) that corrects the
+            pitches and chords the engine hears (not its rhythm).
     lyrics  In the lyrics box: .txt / .lrc (LRC timestamps are dropped).
 """
 
@@ -37,8 +40,14 @@ def kind_of(path: Path, box: str) -> str | None:
         return "chart" if midi_parts(path) - {"vocals"} else "score"
     if ext == ".chart":
         return "chart"
-    if ext == ".txt":
-        return "chords"
+    if ext in (".txt", ".tab"):
+        from ascii_tab import is_ascii_tab
+
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        return "texttab" if is_ascii_tab(text) else ("chords" if ext == ".txt" else None)
     return None
 
 

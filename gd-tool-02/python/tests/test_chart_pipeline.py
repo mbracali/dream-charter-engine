@@ -82,8 +82,9 @@ def test_kinds_by_extension_and_content(tmp_path):
     assert sheets.kind_of(tmp_path / "chart.mid", "guitar") == "chart"
     assert sheets.kind_of(tmp_path / "base.mid", "guitar") == "score"  # no PART tracks
     assert sheets.kind_of(Path("song.gp5"), "bass") == "tab"
-    assert sheets.kind_of(Path("cifra.txt"), "guitar") == "chords"
-    assert sheets.kind_of(Path("cifra.txt"), "lyrics") == "lyrics"
+    (tmp_path / "cifra.txt").write_text("Em  C  D\nwords to sing\n")
+    assert sheets.kind_of(tmp_path / "cifra.txt", "guitar") == "chords"
+    assert sheets.kind_of(tmp_path / "cifra.txt", "lyrics") == "lyrics"
     assert sheets.kind_of(Path("photo.png"), "drums") is None
 
 

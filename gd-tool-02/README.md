@@ -13,14 +13,20 @@ duration, BPM, key, loudness). The song becomes a **project**, and its four scre
 a step bar at the top (`Cmd/Ctrl+1..4`):
 
 1. **Song home**: the song (cover, details, `Edit details`) and one box per music sheet:
-   - **Guitar / Bass / Drums**: drop or `+ Add` any number of sheets and tick the ones the
-     forge should use:
+   - **Guitar / Bass / Drums**: drop, `+ Add` or **Paste** (`Cmd/Ctrl+V` over a box) any number
+     of sheets and tick the ones the forge should use. Paste takes a file copied in Finder or a
+     file manager, a file path, a chord sheet, or a **text tab** (`e|--0--3--|` lines, or drum
+     lines like `HH|x-x-x-|`, with `x4` repeats), saved as `pasted tab N.txt`:
      - Guitar Pro tabs (`.gp3 .gp4 .gp5 .gpx .gp .gp6-8`) and MIDI scores guide the engine's
        transcription (pitches, chords, rhythm), aligned to the audio;
      - chord sheets (`.txt`, Cifra Club / Ultimate Guitar style) limit the chords the engine
        recognises, and their lyrics are sung when nothing else gives lyrics;
      - an existing chart (`.chart`, or a `.mid` with `PART` tracks) is used **as-is** for
        its part (it must be made for this audio: no offset search yet);
+     - text tabs (`python/ascii_tab.py`) become a MIDI score that only corrects the pitches and
+       chords the forge hears (they have no real rhythm); a drum text tab alone can't be
+       aligned yet. Any sheet that doesn't match the recording is ignored, never forced;
+     - a file in several boxes (a full Guitar Pro score in Guitar and Drums) is aligned once;
      - no sheet at all: the forge charts the stem alone.
    - **Lyrics**: typed / pasted text (`Type / paste`), or `.txt` / `.lrc` files (LRC
      timestamps are dropped); pick one, or No vocals.
@@ -87,7 +93,7 @@ font (ASCII only: "Canção" shows as "Cancao"; files keep the real text).
 | `src/board.cpp` | the highway, vocal board and overview |
 | `src/chart.*` | chart.txt in C++ (load, save, beat grid) and drawing shapes |
 | `src/stems.*`, `src/worker.*`, `src/yaml_doc.*`, `src/fields.h`, `src/text_util.h` | playback, Python jobs, YAML subset, project.yaml fields, UTF-8 |
-| `python/` | `extract_metadata.py`, `separate_stems.py`, `forge.py`, `sheets.py`, `chart_text.py`, `midi_io.py`, `export_song.py` |
+| `python/` | `extract_metadata.py`, `separate_stems.py`, `forge.py`, `sheets.py`, `ascii_tab.py`, `chart_text.py`, `midi_io.py`, `export_song.py` |
 
 The Python helpers print one event per line (`STATUS`, `PROGRESS 0..1`, `STEM`, `COUNT`,
 `EXPORTED`, `DONE`, `ERROR`), read by `src/worker.*`. The app logs its jobs to
@@ -114,7 +120,7 @@ scripts/linux_test.sh                       # Linux (Fedora container, podman or
 
 Debug flags (screenshots): `--settings FILE`, `--screenshot FILE.bmp`, `--screen 0-3`,
 `--part NAME`, `--seek S`, `--menu N`, `--hover X Y`, `--overlay details|lyrics|help`,
-`--forge`, `--wait-jobs`, `--simple`, `--one-part`, `--panels`, `--selftest`.
+`--forge`, `--wait-jobs`, `--simple`, `--one-part`, `--panels`, `--selftest`, `--paste BOX`.
 
 ## Models (fully offline)
 

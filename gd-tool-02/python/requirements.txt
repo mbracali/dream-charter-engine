@@ -9,6 +9,7 @@ soundfile==0.14.0
 torch==2.15.0
 -e ..  # dream-charter-engine itself (Forge charts with it)
 beat-this==1.1.0
+pyguitarpro==0.11  # Guitar Pro .gp3-.gp5 sheets (engine extra "refs"; LGPL-3.0)
 einops==0.8.2
 rotary-embedding-torch==0.9.2
 soxr==1.1.0

@@ -13,7 +13,7 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | R02 | Load a song: spinning disc + progress bar while the metadata is read; the song becomes a project | ✅ | `drawLoading`, PROGRESS lines from extract_metadata.py |
 | R03 | Step bar at the top: Song home > Song forge > Fine tuning > Export song (current highlighted, done ones checked) | ✅ | Tuning/Export unlock once forged; shrinks on narrow windows |
 | R04 | Song home: guitar / bass / drums / lyrics boxes, several sheets each, choose which to use; FORGE SONG button | ✅ | drop on a box or + Add; checkboxes (lyrics: one choice); Details + lyrics editor overlays; keys toggle |
-| R05 | Sheets: Guitar Pro and MIDI scores guide the engine (one file per instrument, merged) | 🟡 | Code done (`install_references`, `sheets.pick_tracks`); not yet run on a real Guitar Pro file of a song we have |
+| R05 | Sheets: Guitar Pro and MIDI scores guide the engine (one file per instrument, merged) | 🟡 | R16 found .gp3-.gp5 needed `pyguitarpro` (now in requirements). A file in several boxes is aligned once. Still not run on a real tab of a song we have |
 | R06 | Sheets: chord sheets (cifra) limit the chords and can give the lyrics | ✅ | verified in a forge run (test chord sheet) |
 | R07 | Sheets: existing charts (.chart, notes.mid with PART tracks) used as-is for that part | ✅ | unit-tested parsers; assumes the chart was made for this audio (L02) |
 | R08 | Song forge: separation (if needed) + charting with spinning disc + progress bar; stems mixer + chart preview after | ✅ | full run 90 s on M-series (Demucs + engine) |
@@ -24,6 +24,7 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | R13 | Linux build + tests (podman, Fedora) | ✅ | `scripts/linux_test.sh` |
 | R14 | Band view: guitar, bass, drums (+ keys) highways and the vocals at the same time | ✅ | Song forge default; Mixer toggles the side panels; One part = old single view |
 | R15 | Evil Papagali: find online resources (tabs, chords, lyrics, charts) to make its song better | 🟡 | Research done: [research/evil_papagali.md](research/evil_papagali.md). Best: a human RB3 chart on RhythmVerse; needs a browser download (+ L12) |
+| R16 | Paste button on the Guitar / Bass / Drums boxes: a copied file, a chord sheet or a text (ASCII) tab; text tabs become a MIDI score that guides the forge | ✅ | also Cmd/Ctrl+V over a box; text tabs only correct pitches/chords ("corrigir"), never rhythm; a tab that doesn't match the song is ignored |
 
 ## Later
 
@@ -40,6 +41,7 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | L09 | Licence: MMS_FA (CC BY-NC 4.0) and ADTOF (CC BY-NC-SA) weights are non-commercial | ⏸️ | Decide with the project licence |
 | L10 | Windows / Android runs | ❌ | not tested; Windows python path is coded (`.venv/Scripts/python.exe`) |
 | L12 | Import Rock Band packages: CON (Xbox STFS) and `.rba`/`.mogg`, so RB3 customs from RhythmVerse can be dropped on Song home | ❌ | R15: the best Evil Papagali source is an RB3 custom |
+| L13 | Drum-only references (a drum text tab, a drums-only MIDI) can't be aligned: the engine aligns scores by their pitched tracks | ❌ | Works when the drums come in a full score (Guitar Pro / MIDI) also used for guitar or bass. Needs onset-based alignment |
 | L11 | Old projects (before the rework) have `forge/preview.txt` only: they show as not forged until forged again | ⏸️ | forge again, or convert with `forge.py --preview-only` |
 
 ## Bugs found in the rework (fixed)
