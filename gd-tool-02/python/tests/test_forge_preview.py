@@ -107,7 +107,10 @@ def test_a_score_in_several_boxes_is_aligned_once(monkeypatch, tmp_path):
                         lambda f, inst: {{"guitar": 0, "drums": 3, "bass": 1}[inst]: inst})
     forge.install_references({"guitar": score, "drums": score, "bass": riff}, {"bass": "corrigir"})
     guides = reference.load_guides(None, None, None, 0, None, None, log=lambda m: None)
-    assert guides == {"guitar": "guide:guitar", "drums": "guide:drums", "bass": "guide:bass"}
+    unwrap = {k: getattr(v, "guide", v) for k, v in guides.items()}
+    assert unwrap == {"guitar": "guide:guitar", "drums": "guide:drums", "bass": "guide:bass"}
+    # Guitar and bass follow the sheet only (R19); drums keep the engine's guide.
+    assert isinstance(guides["guitar"], forge.ScoreOnly) and not isinstance(guides["drums"], forge.ScoreOnly)
     assert [c[0] for c in calls] == ["full.gp5", "riff.mid"]
     assert calls[0][1] == {0: "guitar", 3: "drums"}
     assert calls[1][2]["bass"] == "corrigir" and calls[0][2]["guitar"] == "seguir"

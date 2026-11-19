@@ -13,21 +13,23 @@ duration, BPM, key, loudness). The song becomes a **project**, and its four scre
 a step bar at the top (`Cmd/Ctrl+1..4`):
 
 1. **Song home**: the song (cover, details, `Edit details`) and one box per music sheet:
-   - **Guitar / Bass / Drums**: drop, `+ Add` or **Paste** (`Cmd/Ctrl+V` over a box) any number
-     of sheets and tick the ones the forge should use. Paste takes a file copied in Finder or a
-     file manager, a file path, a chord sheet, or a **text tab** (`e|--0--3--|` lines, or drum
-     lines like `HH|x-x-x-|`, with `x4` repeats), saved as `pasted tab N.txt`:
-     - Guitar Pro tabs (`.gp3 .gp4 .gp5 .gpx .gp .gp6-8`) and MIDI scores guide the engine's
-       transcription (pitches, chords, rhythm), aligned to the audio;
-     - chord sheets (`.txt`, Cifra Club / Ultimate Guitar style) limit the chords the engine
-       recognises, and their lyrics are sung when nothing else gives lyrics;
-     - an existing chart (`.chart`, or a `.mid` with `PART` tracks) is used **as-is** for
-       its part (it must be made for this audio: no offset search yet);
-     - text tabs (`python/ascii_tab.py`) become a MIDI score that only corrects the pitches and
-       chords the forge hears (they have no real rhythm); a drum text tab alone can't be
-       aligned yet. Any sheet that doesn't match the recording is ignored, never forced;
-     - a file in several boxes (a full Guitar Pro score in Guitar and Drums) is aligned once;
-     - no sheet at all: the forge charts the stem alone.
+   - **Guitar / Bass / Drums**: drop, `+ Add` or **Paste** any number of sheets and tick the
+     ones the forge should use. **Paste** (or `Cmd/Ctrl+V` over a box) adds a file copied in
+     Finder / a file manager, or opens a text editor holding the clipboard, to paste and fix a
+     **text tab** (`e|--0--3--|` lines, drum lines like `HH|x-x-x-|`, `x4` repeats) or a **chord
+     sheet** before adding it; pasted text sheets have an **edit** button.
+   - **Guitar and bass need a sheet** (or the box's **This song has no guitar / bass**
+     checkbox); FORGE stays off until they have one:
+     - a Guitar Pro tab (`.gp3 .gp4 .gp5 .gpx .gp .gp6-8`), a MIDI score or a text tab gives the
+       **notes**: the part is the sheet's notes only, lined up with the recording; a sheet that
+       doesn't match the recording charts nothing (never a guess from the audio);
+     - an existing chart (`.chart`, or a `.mid` with `PART` tracks) is used **as-is** (it must
+       be made for this audio: no offset search yet);
+     - a chord sheet alone (`.txt`, Cifra Club / Ultimate Guitar style): the forge listens to
+       the stem and uses only those chords; its lyrics are sung when nothing else gives lyrics;
+     - a file in several boxes (a full Guitar Pro score in Guitar and Drums) is aligned once.
+   - **Drums** come from the drums stem (ADTOF); a drum sheet is optional, and a drum text tab
+     alone can't be lined up yet.
    - **Lyrics**: typed / pasted text (`Type / paste`), or `.txt` / `.lrc` files (LRC
      timestamps are dropped); pick one, or No vocals.
    - **Chart keys too** adds a keys part (Full band export only). **FORGE SONG** goes on.
@@ -35,7 +37,7 @@ a step bar at the top (`Cmd/Ctrl+1..4`):
    then charts every part with dream-charter-engine (`ai_charter`) and the sheets. The
    record spins with a progress bar. Then the **Band** view: the vocals across the top and
    every instrument's highway side by side (guitar, bass, drums, keys), all on one playhead,
-   Easy..Expert. **Mixer** shows the stems mixer (mute / solo / waveforms) and the forge
+   Easy..Expert; a checkbox over each part turns its sound on / off, and the vocals always show. **Mixer** shows the stems mixer (mute / solo / waveforms) and the forge
    settings beside it; **One part** shows a single big highway instead. The settings:
    - **Rules**: the engine's genre presets (`ai_charter/genres/`);
    - **Drums**: Heard 0.9 / **Steady** 0.8 / Locked 0.7 (engine `repeat_similarity`: bars at
@@ -94,6 +96,9 @@ font (ASCII only: "Canção" shows as "Cancao"; files keep the real text).
 | `src/chart.*` | chart.txt in C++ (load, save, beat grid) and drawing shapes |
 | `src/stems.*`, `src/worker.*`, `src/yaml_doc.*`, `src/fields.h`, `src/text_util.h` | playback, Python jobs, YAML subset, project.yaml fields, UTF-8 |
 | `python/` | `extract_metadata.py`, `separate_stems.py`, `forge.py`, `sheets.py`, `ascii_tab.py`, `chart_text.py`, `midi_io.py`, `export_song.py` |
+
+The window is English only: the engine (`ai_charter`) logs in Portuguese, so the forge
+writes its log to `forge/forge.log` and shows English lines only (`forge.translate`).
 
 The Python helpers print one event per line (`STATUS`, `PROGRESS 0..1`, `STEM`, `COUNT`,
 `EXPORTED`, `DONE`, `ERROR`), read by `src/worker.*`. The app logs its jobs to

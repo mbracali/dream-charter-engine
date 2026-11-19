@@ -29,6 +29,7 @@
 
 #include "chart.h"
 #include "stems.h"
+#include "text_edit.h"
 #include "worker.h"
 #include "yaml_doc.h"
 
@@ -90,8 +91,8 @@ struct Menu {
 enum class Screen { Home, Forge, Tune, Export };
 enum class JobKind { Metadata, Forge, Export };
 enum class DialogKind { Song, ProjectsDir, CloneHeroDir, YargDir, Sheet };
-enum class Overlay { None, Details, Lyrics, Help, About };
-enum class Focus { None, Field, Lyrics, VocalLyric };
+enum class Overlay { None, Details, Lyrics, Paste, Help, About };
+enum class Focus { None, Field, Editor, VocalLyric };
 enum class Icon { Play, Pause, Start, Back, Forward };
 
 struct Job {
@@ -174,15 +175,10 @@ public:
 
     void loadLyrics(const Project& p);
     void saveLyrics();
-    int lyricsLineCount() const;
-    std::pair<int, int> caretPos() const;
-    size_t lineStart(int line) const;
-    int lineTotal() const;
-    void caretTo(int line, int col);
-    void insertLyrics(const std::string& s);
+    int lyricsLineCount() const { return lyricsEd_.filledLines(); }
 
     void focusField(int i);
-    void focusLyrics();
+    void focusEditor(TextEdit& ed);
     void focusVocalLyric();
     void unfocus();
     void focusNext(int dir);
@@ -254,6 +250,10 @@ public:
     void drawDetails(float W, float H);
     void drawField(Project& p, int index, float x, float y, float labelW, float valueW);
     void drawLyricsEditor(float W, float H);
+    void drawPasteEditor(float W, float H);
+    void drawEditor(TextEdit& ed, const SDL_FRect& box, const std::string& placeholder);
+    void openPasteEditor(Project& p, const std::string& box, const std::string& editFile = "");
+    void savePasted();
     std::vector<SheetFile> sheetFiles(const Project& p, const std::string& box) const;
     static std::string sheetKind(const fs::path& file, const std::string& box);
     static std::string kindLabel(const std::string& kind);
@@ -265,6 +265,9 @@ public:
     bool hasTypedLyrics(const Project& p) const;
     std::string boxSummary(const Project& p, const std::string& box) const;
     int boxAt(float x, float y) const;
+    bool partAbsent(const Project& p, const std::string& box) const;
+    bool hasSheet(const Project& p, const std::string& box) const;
+    std::string forgeBlocker(const Project& p) const;
     void forgeSong();
 
     // ---- Song forge (screen_forge.cpp) ----------------------------------------------------
@@ -376,10 +379,12 @@ public:
     SDL_FRect rollRect_{}, rulerRect_{};
     int pitchLo_ = 48, pitchHi_ = 72;
 
-    std::string lyrics_, lyricsFor_;
-    bool lyricsDirty_ = false;
-    size_t caret_ = 0;
-    int lyricsScroll_ = 0;
+    TextEdit lyricsEd_;          // lyrics.txt (Lyrics > Type / paste)
+    std::string lyricsFor_;
+    TextEdit pasteEd_;           // the Paste editor (Song home boxes)
+    std::string pasteBox_;       // the box it adds to
+    std::string pasteFile_;      // editing an existing pasted sheet (its name), or "" for a new one
+    TextEdit* editor_ = nullptr; // the editor with the caret (Focus::Editor)
     SDL_FRect lyricsRect_{};
 
     std::array<SDL_FRect, 4> boxRects_{};

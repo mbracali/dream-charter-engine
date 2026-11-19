@@ -526,7 +526,7 @@ void App::finishJob(const Job& job, bool ok) {
         p->dirty = false;
         if (p->id == current_) {
             loadCover(*p);
-            if (!lyricsDirty_) loadLyrics(*p);
+            if (!lyricsEd_.dirty) loadLyrics(*p);
         }
         status_ = ok ? p->title() + ": ready. Add the sheets you have, then FORGE SONG." : p->title() + ": reading failed - " + jobError_;
     } else if (job.kind == JobKind::Forge) {
@@ -674,74 +674,20 @@ void App::saveChart() {
 
 void App::loadLyrics(const Project& p) {
     lyricsFor_ = p.id;
-    lyrics_.clear();
     std::ifstream in(p.dir / "lyrics.txt", std::ios::binary);
     std::ostringstream ss;
     ss << in.rdbuf();
-    for (char c : ss.str())
-        if (c != '\r') lyrics_ += c;
-    caret_ = 0;
-    lyricsScroll_ = 0;
-    lyricsDirty_ = false;
+    lyricsEd_.set(ss.str());
 }
 
 void App::saveLyrics() {
-    if (!lyricsDirty_ || lyricsFor_.empty()) return;
+    if (!lyricsEd_.dirty || lyricsFor_.empty()) return;
     Project* p = project(lyricsFor_);
     if (!p) return;
     std::ofstream out(p->dir / "lyrics.txt", std::ios::binary);
-    out << lyrics_;
-    lyricsDirty_ = !out;
+    out << lyricsEd_.text;
+    lyricsEd_.dirty = !out;
     status_ = out ? p->title() + ": lyrics saved." : "Could not save the lyrics.";
-}
-
-int App::lyricsLineCount() const {
-    int n = 0;
-    std::istringstream ss(lyrics_);
-    std::string l;
-    while (std::getline(ss, l))
-        if (l.find_first_not_of(" \t") != std::string::npos) ++n;
-    return n;
-}
-
-std::pair<int, int> App::caretPos() const {
-    int line = 0;
-    size_t start = 0;
-    for (size_t i = 0; i < caret_ && i < lyrics_.size(); ++i)
-        if (lyrics_[i] == '\n') {
-            ++line;
-            start = i + 1;
-        }
-    return {line, int(text::count(lyrics_.substr(start, caret_ - start)))};
-}
-
-size_t App::lineStart(int line) const {
-    size_t i = 0;
-    for (int l = 0; l < line; ++l) {
-        size_t nl = lyrics_.find('\n', i);
-        if (nl == std::string::npos) return lyrics_.size();
-        i = nl + 1;
-    }
-    return i;
-}
-
-int App::lineTotal() const { return int(std::count(lyrics_.begin(), lyrics_.end(), '\n')) + 1; }
-
-void App::caretTo(int line, int col) {
-    line = std::clamp(line, 0, lineTotal() - 1);
-    size_t start = lineStart(line);
-    size_t end = lyrics_.find('\n', start);
-    std::string l = lyrics_.substr(start, (end == std::string::npos ? lyrics_.size() : end) - start);
-    caret_ = start + text::byteOf(l, size_t(std::max(0, col)));
-}
-
-void App::insertLyrics(const std::string& s) {
-    std::string clean;
-    for (char c : s)
-        if (c != '\r') clean += c;
-    lyrics_.insert(caret_, clean);
-    caret_ += clean.size();
-    lyricsDirty_ = true;
 }
 
 // ---- text focus ------------------------------------------------------------------------------
@@ -754,8 +700,9 @@ void App::focusField(int i) {
     SDL_StartTextInput(window_);
 }
 
-void App::focusLyrics() {
-    focus_ = Focus::Lyrics;
+void App::focusEditor(TextEdit& ed) {
+    editor_ = &ed;
+    focus_ = Focus::Editor;
     SDL_StartTextInput(window_);
 }
 
@@ -901,7 +848,7 @@ void App::handle(SDL_Event& e) {
         case SDL_EVENT_KEY_DOWN: onKey(e.key.key, e.key.mod); break;
         case SDL_EVENT_TEXT_INPUT:
             if (focus_ == Focus::Field) editField([&](std::string& v) { v += e.text.text; });
-            else if (focus_ == Focus::Lyrics) insertLyrics(e.text.text);
+            else if (focus_ == Focus::Editor && editor_) editor_->insert(e.text.text);
             else if (focus_ == Focus::VocalLyric && tuneVocals() && sel_ >= 0 && sel_ < int(chart_.vocals.size())) {
                 if (!dragPushed_) pushUndo();
                 dragPushed_ = true;  // one undo step per typed word
@@ -920,7 +867,10 @@ void App::handle(SDL_Event& e) {
             break;
         case SDL_EVENT_MOUSE_WHEEL: {
             const bool zoom = SDL_GetModState() & (SDL_KMOD_GUI | SDL_KMOD_CTRL);
-            if (overlay_ == Overlay::Lyrics && inside(lyricsRect_, mouseX_, mouseY_)) lyricsScroll_ = std::max(0, lyricsScroll_ - int(e.wheel.y * 3));
+            if ((overlay_ == Overlay::Lyrics || overlay_ == Overlay::Paste) && inside(lyricsRect_, mouseX_, mouseY_)) {
+                TextEdit& ed = overlay_ == Overlay::Paste ? pasteEd_ : lyricsEd_;
+                ed.scroll = std::max(0, ed.scroll - int(e.wheel.y * 3));
+            }
             else if (overlay_ != Overlay::None) break;
             else if (inside(sidebarRect_, mouseX_, mouseY_)) sidebarScroll_ = std::max(0.f, sidebarScroll_ - e.wheel.y * 40);
             else if (screen_ == Screen::Tune && (inside(rollRect_, mouseX_, mouseY_) || inside(rulerRect_, mouseX_, mouseY_)))
@@ -975,18 +925,20 @@ void App::onKey(SDL_Keycode key, SDL_Keymod mod) {
             if (Project* p = currentProject(); p && b >= 0 && b < 3) pasteSheet(*p, kBoxes[b].id);
             else if (b == 3) {
                 overlay_ = Overlay::Lyrics;
-                focusLyrics();
-                caret_ = lyrics_.size();
+                focusEditor(lyricsEd_);
+                lyricsEd_.caret = lyricsEd_.text.size();
                 if (char* clip = SDL_GetClipboardText()) {
-                    insertLyrics(clip);
+                    lyricsEd_.insert(clip);
                     SDL_free(clip);
                 }
             }
-        } else if (key == SDLK_V && focus_ == Focus::Lyrics) {
+        } else if (key == SDLK_V && focus_ == Focus::Editor && editor_) {
             if (char* clip = SDL_GetClipboardText()) {
-                insertLyrics(clip);
+                editor_->insert(clip);
                 SDL_free(clip);
             }
+        } else if (key == SDLK_A && focus_ == Focus::Editor && editor_) {
+            editor_->caret = editor_->text.size();  // select-all is not supported: Cmd+A goes to the end
         } else if (screen_ == Screen::Tune && overlay_ == Overlay::None) {
             tuneKey(key, mod);
         }
@@ -999,25 +951,21 @@ void App::onKey(SDL_Keycode key, SDL_Keymod mod) {
         else if (key == SDLK_ESCAPE) unfocus();
         return;
     }
-    if (focus_ == Focus::Lyrics) {
-        auto [line, col] = caretPos();
-        if (key == SDLK_BACKSPACE && caret_ > 0) {
-            size_t from = text::prevStart(lyrics_, caret_);
-            lyrics_.erase(from, caret_ - from);
-            caret_ = from;
-            lyricsDirty_ = true;
-        } else if (key == SDLK_DELETE && caret_ < lyrics_.size()) {
-            size_t to = caret_;
-            text::next(lyrics_, to);
-            lyrics_.erase(caret_, to - caret_);
-            lyricsDirty_ = true;
-        } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) insertLyrics("\n");
-        else if (key == SDLK_LEFT && caret_ > 0) caret_ = text::prevStart(lyrics_, caret_);
-        else if (key == SDLK_RIGHT && caret_ < lyrics_.size()) text::next(lyrics_, caret_);
-        else if (key == SDLK_UP) caretTo(line - 1, col);
-        else if (key == SDLK_DOWN) caretTo(line + 1, col);
-        else if (key == SDLK_HOME) caretTo(line, 0);
-        else if (key == SDLK_END) caretTo(line, 1 << 20);
+    if (focus_ == Focus::Editor && editor_) {
+        TextEdit& ed = *editor_;
+        auto [line, col] = ed.pos();
+        if (key == SDLK_BACKSPACE) ed.backspace();
+        else if (key == SDLK_DELETE) ed.del();
+        else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) ed.insert("\n");
+        else if (key == SDLK_TAB) ed.insert("  ");
+        else if (key == SDLK_LEFT) ed.left();
+        else if (key == SDLK_RIGHT) ed.right();
+        else if (key == SDLK_UP) ed.moveTo(line - 1, col);
+        else if (key == SDLK_DOWN) ed.moveTo(line + 1, col);
+        else if (key == SDLK_PAGEUP) ed.moveTo(line - 20, col);
+        else if (key == SDLK_PAGEDOWN) ed.moveTo(line + 20, col);
+        else if (key == SDLK_HOME) ed.moveTo(line, 0);
+        else if (key == SDLK_END) ed.moveTo(line, 1 << 20);
         else if (key == SDLK_ESCAPE) unfocus();
         return;
     }
@@ -1040,7 +988,7 @@ void App::onKey(SDL_Keycode key, SDL_Keymod mod) {
         }
         return;
     }
-    if (overlay_ == Overlay::Details || overlay_ == Overlay::Lyrics) {
+    if (overlay_ == Overlay::Details || overlay_ == Overlay::Lyrics || overlay_ == Overlay::Paste) {
         if (key == SDLK_ESCAPE) {
             if (Project* p = currentProject()) saveProject(*p);
             saveLyrics();
@@ -1373,6 +1321,7 @@ void App::draw() {
     drawTooltip(W, H);
     if (overlay_ == Overlay::Details) drawDetails(W, H);
     if (overlay_ == Overlay::Lyrics) drawLyricsEditor(W, H);
+    if (overlay_ == Overlay::Paste) drawPasteEditor(W, H);
     drawMenuBar({0, 0, W, menuH});
     if (overlay_ == Overlay::Help) drawHelp(W, H);
     if (overlay_ == Overlay::About) drawAbout(W, H);

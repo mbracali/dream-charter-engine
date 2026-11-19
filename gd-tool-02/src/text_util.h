@@ -52,6 +52,9 @@ inline char asciiOf(uint32_t cp) {
         case 0x00A0: return ' ';
         case 0x0152: return 'O';
         case 0x0153: return 'o';
+        case 0x00AA: return 'a';  // 2ª
+        case 0x00BA: case 0x00B0: return 'o';  // 1º, degrees
+        case 0x200B: case 0x200C: case 0x200D: case 0xFEFF: return '\0';  // invisible: dropped
         default: return '?';
     }
 }
@@ -59,7 +62,8 @@ inline char asciiOf(uint32_t cp) {
 inline std::string ascii(const std::string& s) {
     std::string out;
     out.reserve(s.size());
-    for (size_t i = 0; i < s.size();) out += asciiOf(next(s, i));
+    for (size_t i = 0; i < s.size();)
+        if (const char c = asciiOf(next(s, i))) out += c;
     return out;
 }
 

@@ -187,32 +187,57 @@ void App::pasteSheet(Project& p, const std::string& box) {
         }
         if (added) return;
     }
-    char* clip = SDL_GetClipboardText();
-    std::string textIn = clip ? clip : "";
-    SDL_free(clip);
-    textIn.erase(std::remove(textIn.begin(), textIn.end(), '\r'), textIn.end());
-    if (trim(textIn).empty()) {
-        status_ = "The clipboard is empty: copy a tab, a chord sheet or a file first.";
-        return;
+    // Text (or nothing): the Paste editor, with the clipboard already in it.
+    openPasteEditor(p, box);
+}
+
+void App::openPasteEditor(Project& p, const std::string& box, const std::string& editFile) {
+    std::string textIn;
+    if (!editFile.empty()) {
+        textIn = readAll(p.dir / "sheets" / box / editFile);
+    } else if (char* clip = SDL_GetClipboardText()) {
+        textIn = clip;
+        SDL_free(clip);
+        // A single line naming a file: add the file itself.
+        if (trim(textIn).find('\n') == std::string::npos && fs::is_regular_file(pastedPath(textIn))) {
+            addSheet(p, box, pastedPath(textIn));
+            return;
+        }
     }
-    if (trim(textIn).find('\n') == std::string::npos && fs::is_regular_file(pastedPath(textIn))) {
-        addSheet(p, box, pastedPath(textIn));
-        return;
-    }
+    pasteEd_.set(textIn);
+    pasteEd_.caret = pasteEd_.text.size();
+    pasteEd_.dirty = !editFile.empty() ? false : !textIn.empty();
+    pasteBox_ = box;
+    pasteFile_ = editFile;
+    overlay_ = Overlay::Paste;
+    focusEditor(pasteEd_);
+}
+
+// The Paste editor's text becomes (or replaces) a sheet of the box.
+void App::savePasted() {
+    Project* p = currentProject();
+    if (!p) return;
+    const std::string& textIn = pasteEd_.text;
+    if (trim(textIn).empty()) return;
     const bool tab = isAsciiTab(textIn);
-    if (box == "drums" && !tab) {
-        status_ = "Drums take a text drum tab (lines like HH|x-x-x-x-|) or a copied Guitar Pro / MIDI / chart file.";
-        return;
-    }
-    const fs::path dir = p.dir / "sheets" / box;
+    const fs::path dir = p->dir / "sheets" / pasteBox_;
     std::error_code ec;
     fs::create_directories(dir, ec);
-    const std::string base = tab ? "pasted tab" : "pasted chords";
-    fs::path file;
-    for (int n = 1; fs::exists(file = dir / (base + " " + std::to_string(n) + ".txt")); ++n) {
+    fs::path file = dir / pasteFile_;
+    if (pasteFile_.empty()) {
+        const std::string base = tab ? "pasted tab" : "pasted chords";
+        for (int n = 1; fs::exists(file = dir / (base + " " + std::to_string(n) + ".txt")); ++n) {
+        }
     }
-    std::ofstream(file, std::ios::binary) << textIn << (textIn.back() == '\n' ? "" : "\n");
-    addSheet(p, box, file);
+    {
+        std::ofstream out(file, std::ios::binary);
+        out << textIn << (textIn.back() == '\n' ? "" : "\n");
+    }
+    const bool edited = !pasteFile_.empty();
+    unfocus();
+    overlay_ = Overlay::None;
+    if (edited) status_ = file.filename().string() + " saved (" + kindLabel(sheetKind(file, pasteBox_)) + ").";
+    else addSheet(*p, pasteBox_, file);
 }
 
 void App::removeSheet(Project& p, const std::string& box, const std::string& name) {
@@ -243,7 +268,7 @@ void App::toggleSheet(Project& p, const std::string& box, const std::string& nam
 }
 
 bool App::hasTypedLyrics(const Project& p) const {
-    if (p.id == lyricsFor_) return lyrics_.find_first_not_of(" \t\n") != std::string::npos;
+    if (p.id == lyricsFor_) return lyricsEd_.text.find_first_not_of(" \t\n") != std::string::npos;
     std::error_code ec;
     return fs::exists(p.dir / "lyrics.txt") && fs::file_size(p.dir / "lyrics.txt", ec) > 2;
 }
@@ -269,20 +294,44 @@ std::string App::boxSummary(const Project& p, const std::string& box) const {
         if (c == "none") return "No vocals.";
         return "Vocals sing " + std::string(c == "typed" ? "the typed lyrics" : c) + ".";
     }
+    if (partAbsent(p, box)) return "Not charted: this song has no " + box + ".";
+    if (box != "drums" && !hasSheet(p, box)) return "Needs a sheet: a tab, MIDI, chart or chord sheet.";
     std::string chart, guide;
     bool chords = false;
     for (auto& f : sheetFiles(p, box)) {
         if (!f.used) continue;
         if (f.kind == "chart" && chart.empty()) chart = f.name;
-        else if ((f.kind == "tab" || f.kind == "score" || f.kind == "texttab") && guide.empty()) guide = f.name + (f.kind == "texttab" ? " (pitches)" : "");  // " (pitches)": text tabs only fix notes
+        else if ((f.kind == "tab" || f.kind == "score" || f.kind == "texttab") && guide.empty()) guide = f.name;
         else if (f.kind == "chords") chords = true;
     }
     if (!chart.empty()) return "Forge uses the chart " + chart + " as-is.";
-    if (box == "drums" && guide.find(" (pitches)") != std::string::npos)
-        return "Drum text tabs alone can't be aligned yet.";
-    std::string s = guide.empty() ? "Forge charts the " + box + " stem" : "Guided by " + guide;
+    if (box == "drums" && !guide.empty() && sheetKind(p.dir / "sheets" / box / guide, box) == "texttab")
+        return "Drum text tabs alone can't be lined up yet.";
+    std::string s = guide.empty() ? (chords ? "Charted from the stem, using only the chords" : "Forge charts the " + box + " stem")
+                                  : "Notes from " + guide;
+    if (chords && guide.empty()) return s + ".";
     if (chords) s += " + the chords";
     return s + ".";
+}
+
+bool App::partAbsent(const Project& p, const std::string& box) const { return p.doc.get("sheets", box + "_absent") == "yes"; }
+
+// Guitar and bass need a sheet the forge can use (R20): a tab, MIDI, chart or chord sheet.
+bool App::hasSheet(const Project& p, const std::string& box) const {
+    for (auto& f : sheetFiles(p, box))
+        if (f.used && !f.kind.empty()) return true;
+    return false;
+}
+
+// Why FORGE can't run yet ("" when it can).
+std::string App::forgeBlocker(const Project& p) const {
+    std::vector<std::string> missing;
+    for (const char* box : {"guitar", "bass"})
+        if (!partAbsent(p, box) && !hasSheet(p, box)) missing.push_back(box);
+    if (missing.empty()) return "";
+    std::string parts = missing.size() == 2 ? "guitar and bass need" : missing[0] + " needs";
+    parts[0] = char(std::toupper(parts[0]));
+    return parts + " a sheet (or tick \"This song has no ...\").";
 }
 
 int App::boxAt(float x, float y) const {
@@ -296,6 +345,11 @@ void App::forgeSong() {
     if (!p) return;
     if (jobFor(*p, JobKind::Forge)) {
         setScreen(Screen::Forge);
+        return;
+    }
+    if (const std::string why = forgeBlocker(*p); !why.empty()) {
+        status_ = why;
+        setScreen(Screen::Home);
         return;
     }
     saveLyrics();
@@ -335,9 +389,9 @@ void App::drawHome(Project& p, const SDL_FRect& r) {
     const float hx = r.x + r.w - std::min(w * 0.36f, 380 * u_), hw = r.x + r.w - hx;
     text(hx, r.y + 6 * u_, "MUSIC SHEETS", kSand, 1.5f * u_);
     float hy = r.y + 28 * u_;
-    for (auto& l : wrap("Give the forge whatever you have: tabs and scores guide the transcription, chord sheets "
-                        "limit the chords, a finished chart is used as-is. Nothing at all works too: the forge "
-                        "charts the stems.",
+    for (auto& l : wrap("Guitar and bass need a sheet: a tab, MIDI or chart gives the notes; a chord sheet "
+                        "only limits the chords the forge hears. Drums come from the drums stem (a sheet is "
+                        "optional). Use Paste for text tabs.",
                         size_t(hw / (8 * 1.25f * u_)))) {
         text(hx, hy, l, kDim, 1.25f * u_);
         hy += 16 * u_;
@@ -358,7 +412,8 @@ void App::drawHome(Project& p, const SDL_FRect& r) {
     const bool forging = jobFor(p, JobKind::Forge);
     const bool tuned = p.doc.get("forge", "tuned") == "yes";
     const std::string label = forging ? "FORGING..." : p.forged() ? "FORGE AGAIN" : "FORGE SONG";
-    bigButton({r.x + (r.w - fw) / 2, fy, fw, fh}, label, [this] { forgeSong(); }, !busy(p) || forging);
+    const std::string blocker = forgeBlocker(p);
+    bigButton({r.x + (r.w - fw) / 2, fy, fw, fh}, label, [this] { forgeSong(); }, (!busy(p) || forging) && (blocker.empty() || forging));
     // Keys (left) and what happens (right).
     SDL_FRect kb{r.x, fy + fh / 2 - 9 * u_, 18 * u_, 18 * u_};
     const bool keys = p.doc.get("forge", "keys") == "on";
@@ -368,10 +423,17 @@ void App::drawHome(Project& p, const SDL_FRect& r) {
         [this, keys](float, float) {
             if (Project* q = currentProject()) setValue(*q, "forge", "keys", keys ? "off" : "on");
         });
-    std::string note = forging ? "Running: see Song forge." : !p.forged() ? "Stems, then charts: a few minutes."
+    std::string note = forging ? "Running: see Song forge." : !blocker.empty() ? blocker : !p.forged() ? "Stems, then charts: a few minutes."
                        : tuned ? "Replaces your fine tuning." : "Forged " + p.doc.get("forge", "forged_at").substr(0, 10) + ".";
     const float nx = r.x + (r.w + fw) / 2 + 20 * u_;
-    text(nx, fy + fh / 2 - 6 * u_, note, tuned && !forging ? kSand : kDim, 1.25f * u_, r.x + r.w - nx);
+    const float nw = r.x + r.w - nx;
+    float ny = fy + fh / 2 - 6 * u_;
+    const auto lines = wrap(note, size_t(nw / (8 * 1.25f * u_)));
+    if (lines.size() > 1) ny -= 8 * u_ * float(lines.size() - 1);
+    for (auto& l : lines) {
+        text(nx, ny, l, !blocker.empty() && !forging ? kOxblood : tuned && !forging ? kSand : kDim, 1.25f * u_);
+        ny += 16 * u_;
+    }
 }
 
 void App::drawBox(Project& p, const BoxDef& def, const SDL_FRect& r) {
@@ -389,7 +451,8 @@ void App::drawBox(Project& p, const BoxDef& def, const SDL_FRect& r) {
     }, true, false, 28 * u_);
 
     auto files = sheetFiles(p, box);
-    const float listTop = r.y + 54 * u_, rowH = 28 * u_, footY = r.y + r.h - 28 * u_;
+    // Guitar / bass have a two-line footer: the "no guitar" checkbox, then the summary.
+    const float listTop = r.y + 54 * u_, rowH = 28 * u_, footY = r.y + r.h - (box == "drums" ? 28 : 50) * u_;
     if (files.empty()) {
         SDL_FRect zone{r.x + 16 * u_, listTop, r.w - 32 * u_, footY - listTop - 8 * u_};
         for (float dx = 0; dx < zone.w; dx += 12 * u_) {  // dashed outline
@@ -402,7 +465,8 @@ void App::drawBox(Project& p, const BoxDef& def, const SDL_FRect& r) {
         }
         const std::string a = "Drop a sheet here";
         text(zone.x + (zone.w - textW(a, 1.75f * u_)) / 2, zone.y + zone.h / 2 - 10 * u_, a, kDim, 1.75f * u_);
-        const std::string b = "optional: the stem alone works too";
+        const std::string b = box == "drums" ? "optional: the drums stem alone works well"
+                                             : "needed: a tab, MIDI, chart or chord sheet";
         text(zone.x + (zone.w - std::min(textW(b, 1.25f * u_), zone.w)) / 2, zone.y + zone.h / 2 + 12 * u_, b, kMuted, 1.25f * u_, zone.w);
     }
     float y = listTop;
@@ -421,7 +485,7 @@ void App::drawBox(Project& p, const BoxDef& def, const SDL_FRect& r) {
             });
         const std::string kl = kindLabel(f.kind);
         const float kw = textW(kl, 1.25f * u_);
-        text(cb.x + 26 * u_, row.y + (row.h - 12 * u_) / 2, f.name, f.used ? kCream : kMuted, 1.5f * u_, row.w - kw - 90 * u_);
+        text(cb.x + 26 * u_, row.y + (row.h - 12 * u_) / 2, f.name, f.used ? kCream : kMuted, 1.5f * u_, row.w - kw - 150 * u_);
         text(row.x + row.w - kw - 40 * u_, row.y + (row.h - 10 * u_) / 2, kl, f.kind.empty() ? kOxblood : f.kind == "chart" ? kSand : kDim, 1.25f * u_);
         SDL_FRect x{row.x + row.w - 26 * u_, row.y + (row.h - 20 * u_) / 2, 20 * u_, 20 * u_};
         if (hovered(x)) fill(x, kOxblood);
@@ -429,10 +493,31 @@ void App::drawBox(Project& p, const BoxDef& def, const SDL_FRect& r) {
         hit(x, [this, box, name](float, float) {
             if (Project* q = currentProject()) removeSheet(*q, box, name);
         });
+        if (lower(fs::path(name).extension().string()) == ".txt") {  // a text sheet: edit it
+            const float ew = textW("edit", 1.25f * u_) + 12 * u_;
+            SDL_FRect e{row.x + row.w - kw - 40 * u_ - ew - 10 * u_, row.y + (row.h - 20 * u_) / 2, ew, 20 * u_};
+            fill(e, hovered(e) ? kHover : kBar);
+            text(e.x + 6 * u_, e.y + 6 * u_, "edit", kSand, 1.25f * u_);
+            hit(e, [this, box, name](float, float) {
+                if (Project* q = currentProject()) openPasteEditor(*q, box, name);
+            });
+        }
         y += rowH;
     }
     fill({r.x + 16 * u_, footY - 4 * u_, r.w - 32 * u_, u_}, kBar);
-    text(r.x + 16 * u_, footY + 6 * u_, boxSummary(p, box), kDim, 1.25f * u_, r.w - 32 * u_);
+    const bool absent = partAbsent(p, box), missing = box != "drums" && !absent && !hasSheet(p, box);
+    const float sy = box == "drums" ? footY + 6 * u_ : footY + 28 * u_;
+    text(r.x + 16 * u_, sy, boxSummary(p, box), missing ? kOxblood : absent ? kMuted : kDim, 1.25f * u_, r.w - 32 * u_);
+    if (box != "drums") {  // R20: the user says the song has no guitar / bass
+        const std::string l = "This song has no " + box;
+        const float lw = textW(l, 1.25f * u_) + 28 * u_;
+        SDL_FRect cb{r.x + 16 * u_, footY + 4 * u_, 16 * u_, 16 * u_};
+        checkbox(cb, absent);
+        text(cb.x + 24 * u_, footY + 7 * u_, l, absent ? kCream : kDim, 1.25f * u_);
+        hit({cb.x - 4 * u_, cb.y - 4 * u_, lw + 8 * u_, 24 * u_}, [this, box, absent](float, float) {
+            if (Project* q = currentProject()) setValue(*q, "sheets", box + "_absent", absent ? "" : "yes");
+        });
+    }
 }
 
 void App::drawLyricsBox(Project& p, const SDL_FRect& r) {
@@ -447,7 +532,7 @@ void App::drawLyricsBox(Project& p, const SDL_FRect& r) {
     bx -= buttonW("Type / paste") + 8 * u_;
     button(bx, r.y + 14 * u_, "Type / paste", [this] {
         overlay_ = Overlay::Lyrics;
-        focusLyrics();
+        focusEditor(lyricsEd_);
     }, true, false, 28 * u_);
 
     const std::string choice = lyricsChoice(p);
@@ -481,7 +566,7 @@ void App::drawLyricsBox(Project& p, const SDL_FRect& r) {
     row("No vocals", "", "none", choice == "none", true, "");
     // A peek at what will be sung.
     if (choice == "typed" && y + 24 * u_ < footY) {
-        std::istringstream ss(lyrics_);
+        std::istringstream ss(lyricsEd_.text);
         std::string l;
         y += 6 * u_;
         while (std::getline(ss, l) && y + 18 * u_ < footY - 6 * u_) {
@@ -571,46 +656,97 @@ void App::drawLyricsEditor(float W, float H) {
         unfocus();
         overlay_ = Overlay::None;
         if (Project* q = currentProject())
-            if (hasTypedLyrics(*q) && q->doc.get("sheets", "lyrics_use") == "none") setValue(*q, "sheets", "lyrics_use", "typed");
+            if (hasTypedLyrics(*q)) setValue(*q, "sheets", "lyrics_use", "typed");  // just typed: sing these
     }, true, true);
     text(r.x, r.y, "One sung phrase per line. Paste with " + kCmd + "V.", kDim, 1.5f * u_);
-    SDL_FRect box{r.x, r.y + 24 * u_, r.w, r.h - 24 * u_};
+    drawEditor(lyricsEd_, {r.x, r.y + 24 * u_, r.w, r.h - 24 * u_}, "Click here and type or paste the lyrics.");
+}
+
+// A text editor box (lyrics, Paste): click to place the caret, wheel to scroll.
+void App::drawEditor(TextEdit& ed, const SDL_FRect& box, const std::string& placeholder) {
     lyricsRect_ = box;
+    const bool focused = focus_ == Focus::Editor && editor_ == &ed;
     fill(box, kInk);
-    frame(box, focus_ == Focus::Lyrics ? kOxblood : kMuted);
-    const float ts = 1.75f * u_, lineH = 24 * u_, gutter = 52 * u_;
-    hit(box, [this, box, ts, lineH, gutter](float mx, float my) {
-        focusLyrics();
-        int line = lyricsScroll_ + int((my - box.y - 10 * u_) / lineH);
-        int col = int(std::lround((mx - box.x - gutter) / (8 * ts)));
-        caretTo(line, col);
+    frame(box, focused ? kOxblood : kMuted);
+    const float ts = 1.5f * u_, lineH = 20 * u_, gutter = 52 * u_;
+    hit(box, [this, &ed, box, ts, lineH, gutter](float mx, float my) {
+        focusEditor(ed);
+        const int line = ed.scroll + int((my - box.y - 10 * u_) / lineH);
+        const int col = int(std::lround((mx - box.x - gutter) / (8 * ts)));
+        ed.moveTo(line, col);
     });
     const int visible = std::max(1, int((box.h - 20 * u_) / lineH));
-    auto [cl, cc] = caretPos();
-    if (focus_ == Focus::Lyrics) {
-        if (cl < lyricsScroll_) lyricsScroll_ = cl;
-        if (cl >= lyricsScroll_ + visible) lyricsScroll_ = cl - visible + 1;
+    auto [cl, cc] = ed.pos();
+    if (focused) {
+        if (cl < ed.scroll) ed.scroll = cl;
+        if (cl >= ed.scroll + visible) ed.scroll = cl - visible + 1;
     }
-    lyricsScroll_ = std::clamp(lyricsScroll_, 0, std::max(0, lineTotal() - visible));
-    if (lyrics_.empty() && focus_ != Focus::Lyrics) {
-        text(box.x + gutter, box.y + 10 * u_, "Click here and type or paste the lyrics.", kMuted, ts);
+    ed.scroll = std::clamp(ed.scroll, 0, std::max(0, ed.lineTotal() - visible));
+    if (ed.text.empty() && !focused) {
+        text(box.x + gutter, box.y + 10 * u_, placeholder, kMuted, ts);
         return;
     }
     int lineNo = 0;
     size_t start = 0;
     while (true) {
-        size_t end = lyrics_.find('\n', start);
-        std::string l = lyrics_.substr(start, (end == std::string::npos ? lyrics_.size() : end) - start);
-        int row = lineNo - lyricsScroll_;
+        size_t end = ed.text.find('\n', start);
+        std::string l = ed.text.substr(start, (end == std::string::npos ? ed.text.size() : end) - start);
+        const int row = lineNo - ed.scroll;
         if (row >= 0 && row < visible) {
-            float ly = box.y + 10 * u_ + float(row) * lineH;
-            text(box.x + 8 * u_, ly, std::to_string(lineNo + 1), kMuted, 1.25f * u_);
+            const float ly = box.y + 10 * u_ + float(row) * lineH;
+            text(box.x + 8 * u_, ly, std::to_string(lineNo + 1), kMuted, 1.1f * u_);
             text(box.x + gutter, ly, l, kCream, ts, box.w - gutter - 10 * u_);
-            if (focus_ == Focus::Lyrics && lineNo == cl && (SDL_GetTicks() / 500) % 2 == 0)
+            if (focused && lineNo == cl && (SDL_GetTicks() / 500) % 2 == 0)
                 fill({box.x + gutter + float(cc) * 8 * ts, ly - 3 * u_, 2 * u_, 8 * ts + 6 * u_}, kCream);
         }
-        if (end == std::string::npos) break;
+        if (end == std::string::npos || row >= visible) break;
         start = end + 1;
         ++lineNo;
     }
+    if (ed.lineTotal() > visible) {  // a scroll bar
+        const float th = std::max(20 * u_, box.h * float(visible) / float(ed.lineTotal()));
+        const float ty = box.y + (box.h - th) * float(ed.scroll) / float(std::max(1, ed.lineTotal() - visible));
+        fill({box.x + box.w - 5 * u_, ty, 3 * u_, th}, kMuted);
+    }
+}
+
+// Paste: a text editor for a tab or chord sheet, already holding the clipboard.
+void App::drawPasteEditor(float W, float H) {
+    Project* p = currentProject();
+    if (!p) {
+        overlay_ = Overlay::None;
+        return;
+    }
+    std::string label = pasteBox_;
+    if (!label.empty()) label[0] = char(std::toupper(label[0]));
+    const float pw = std::min(W - 60 * u_, 1200 * u_), ph = std::min(H - 60 * u_, 820 * u_);
+    SDL_FRect r = drawPanel(W, H, pw, ph, pasteFile_.empty() ? "Paste a " + pasteBox_ + " sheet" : "Edit " + pasteFile_);
+    const bool empty = trim(pasteEd_.text).empty();
+    const bool tab = !empty && isAsciiTab(pasteEd_.text);
+    const bool ok = !empty && (tab || pasteBox_ != "drums");
+    const std::string action = pasteFile_.empty() ? "Add to " + label : "Save";
+    const float aw = buttonW(action), cw = buttonW("Cancel");
+    button(r.x + r.w - aw, r.y - 46 * u_, action, [this] { savePasted(); }, ok, true);
+    button(r.x + r.w - aw - cw - 8 * u_, r.y - 46 * u_, "Cancel", [this] {
+        unfocus();
+        overlay_ = Overlay::None;
+    });
+    text(r.x, r.y, "Paste with " + kCmd + "V, then edit. A text tab (lines like e|--0--3--| or HH|x-x-x-|) or a chord sheet.",
+         kDim, 1.25f * u_, r.w);
+    // What it looks like, live.
+    std::string what;
+    SDL_Color wc = kDim;
+    if (empty) what = "Nothing yet.";
+    else if (tab) {
+        what = "Text tab: the " + pasteBox_ + " will follow its notes (lined up with the recording).";
+        wc = kGood;
+    } else if (pasteBox_ == "drums") {
+        what = "Not a drum tab: drums need lines like HH|x-x-x-x-| (or add a Guitar Pro / MIDI / chart file).";
+        wc = kOxblood;
+    } else {
+        what = "Chord sheet: the forge listens to the " + pasteBox_ + " and uses only these chords.";
+        wc = kSand;
+    }
+    text(r.x, r.y + 20 * u_, what, wc, 1.25f * u_, r.w);
+    drawEditor(pasteEd_, {r.x, r.y + 42 * u_, r.w, r.h - 42 * u_}, "Paste here (" + kCmd + "V)...");
 }

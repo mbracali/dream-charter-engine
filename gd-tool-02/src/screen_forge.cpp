@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <map>
 
 #include "app.h"
 
@@ -15,7 +16,7 @@ std::vector<std::string> App::chartParts() const {
     std::vector<std::string> out;
     for (const char* p : {"guitar", "bass", "drums", "keys"})
         if (chart_.hasPart(p)) out.push_back(p);
-    if (!chart_.vocals.empty()) out.push_back("vocals");
+    out.push_back("vocals");  // always (R23), even with no syllables
     return out;
 }
 
@@ -35,7 +36,7 @@ std::string App::sourceOf(const Project& p, const std::string& part) const {
 std::string App::forgeSignature(const Project& p) const {
     std::string sig = "genre=" + p.doc.get("forge", "genre") + ";drums=" + drumStyle(p) + ";riffs=" + riffStyle(p) +
                       ";keys=" + p.doc.get("forge", "keys") + ";guitar=" + sourceOf(p, "guitar") + ";bass=" + sourceOf(p, "bass") +
-                      ";lyrics=" + lyricsChoice(p);
+                      ";lyrics=" + lyricsChoice(p) + ";absent=" + p.doc.get("sheets", "guitar_absent") + p.doc.get("sheets", "bass_absent");
     for (const char* box : {"guitar", "bass", "drums"}) {
         sig += std::string(";") + box + ":";
         for (auto& f : sheetFiles(p, box))
@@ -76,7 +77,11 @@ const std::vector<std::pair<std::string, std::string>>& App::genres() {
                     name = line.substr(8, line.rfind('"') - 8);
                     break;
                 }
-            found.push_back({e.path().stem().string(), name});
+            static const std::map<std::string, std::string> english = {
+                {"acustico", "Acoustic / Ballad"}, {"eletronica", "Electronic / Dance"}, {"blues_jazz", "Blues / Jazz"},
+                {"mpb", "MPB / Bossa Nova / Samba"}, {"reggae", "Reggae / Ska"}, {"sertanejo", "Sertanejo / Country"}};
+            auto it = english.find(e.path().stem().string());
+            found.push_back({e.path().stem().string(), it != english.end() ? it->second : name});
         }
         std::sort(found.begin(), found.end(), [](auto& a, auto& b) { return a.second < b.second; });
         genres_.insert(genres_.end(), found.begin(), found.end());
@@ -126,7 +131,10 @@ void App::drawForgeScreen(Project& p, const SDL_FRect& r) {
         }
         y += 20 * u_;
         drawForgeSettings(p, {x, y, std::min(w, 440 * u_), r.y + r.h - y - 90 * u_});
-        bigButton({x, r.y + r.h - 66 * u_, std::min(w, 380 * u_), 56 * u_}, failed ? "TRY AGAIN" : "FORGE SONG", [this] { forgeSong(); });
+        const std::string why = forgeBlocker(p);
+        if (!why.empty()) text(x, r.y + r.h - 90 * u_, why, kOxblood, 1.25f * u_, w);
+        bigButton({x, r.y + r.h - 66 * u_, std::min(w, 380 * u_), 56 * u_}, failed ? "TRY AGAIN" : "FORGE SONG", [this] { forgeSong(); },
+                  why.empty());
         return;
     }
     if (chartFor_ != p.id) loadChart(p);
@@ -317,7 +325,7 @@ void App::drawForgeSettings(Project& p, const SDL_FRect& r) {
     }
     if (y + 34 * u_ > r.y + r.h) return;
     const bool changed = p.doc.get("forge", "forged_with") != forgeSignature(p);
-    button(lx, y, "Forge again", [this] { forgeSong(); }, !busy(p), changed, 32 * u_);
+    button(lx, y, "Forge again", [this] { forgeSong(); }, !busy(p) && forgeBlocker(p).empty(), changed, 32 * u_);
     const std::string st = changed ? "settings or sheets changed" : "forged " + p.doc.get("forge", "forged_at").substr(5, 5) + " " + p.doc.get("forge", "forged_at").substr(11, 5);
     text(lx + buttonW("Forge again") + 12 * u_, y + 10 * u_, st, changed ? kSand : kMuted, 1.25f * u_, r.w - buttonW("Forge again") - 12 * u_);
 }
@@ -377,24 +385,41 @@ void App::drawPreview(Project& p, const SDL_FRect& r) {
 // per charted part (guitar, bass, drums, keys) side by side, all on the same playhead.
 void App::drawBandView(const SDL_FRect& r) {
     const float now = float(player_.playhead());
+    Project* p = currentProject();
     std::vector<std::string> lanes;
-    for (const char* p : {"guitar", "bass", "drums", "keys"})
-        if (chart_.hasPart(p)) lanes.push_back(p);
+    for (const char* part : {"guitar", "bass", "drums", "keys"})
+        if (chart_.hasPart(part) || (std::string(part) != "keys" && p && !partAbsent(*p, part))) lanes.push_back(part);
+    // A part's sound: the stem it is made from, on or off (R22).
+    auto soundBox = [&](float x, float y, const std::string& part) {
+        const std::string stem = part == "drums" || part == "vocals" || !p ? part : sourceOf(*p, part);
+        int index = -1;
+        for (size_t i = 0; i < player_.stems().size(); ++i)
+            if (player_.stems()[i]->name == stem) index = int(i);
+        SDL_FRect cb{x, y, 16 * u_, 16 * u_};
+        const bool on = index >= 0 && !player_.stems()[size_t(index)]->muted;
+        checkbox(cb, on);
+        if (index >= 0) hit({cb.x - 4 * u_, cb.y - 4 * u_, cb.w + 8 * u_, cb.h + 8 * u_}, [this, index](float, float) {
+                player_.toggleMute(size_t(index));
+            });
+        return cb.w + 10 * u_;
+    };
     float y = r.y;
-    if (!chart_.vocals.empty()) {
+    {  // Vocals: always (R23), even with no syllables.
         const float vh = std::min(r.h * 0.26f, 190 * u_);
         SDL_FRect strip{r.x + 8 * u_, y, r.w - 16 * u_, vh};
         fill(strip, {0x13, 0x11, 0x15, 255});
         fill({strip.x, strip.y, 3 * u_, 22 * u_}, stemColor("vocals"));
-        text(strip.x + 10 * u_, strip.y + 6 * u_, "Vocals  " + std::to_string(chart_.vocals.size()) + " syllables", kSand, 1.25f * u_);
+        const float sx = strip.x + 10 * u_ + soundBox(strip.x + 10 * u_, strip.y + 3 * u_, "vocals");
+        text(sx, strip.y + 6 * u_, chart_.vocals.empty() ? "Vocals" : "Vocals  " + std::to_string(chart_.vocals.size()) + " syllables",
+             kSand, 1.25f * u_);
         drawVocalBoard({strip.x, strip.y + 14 * u_, strip.w, strip.h - 14 * u_}, now);
+        if (chart_.vocals.empty()) {
+            const std::string a = "No vocals charted: add lyrics on Song home and forge again.";
+            text(strip.x + (strip.w - textW(a, 1.25f * u_)) / 2, strip.y + strip.h / 2, a, kMuted, 1.25f * u_);
+        }
         y += vh + 8 * u_;
     }
-    if (lanes.empty()) {
-        const std::string a = "No instrument charts. Forge again.";
-        text(r.x + (r.w - textW(a, 1.5f * u_)) / 2, y + (r.y + r.h - y) / 2, a, kSand, 1.5f * u_);
-        return;
-    }
+    if (lanes.empty()) return;
     const float gap = 10 * u_, w = (r.w - gap * float(lanes.size() + 1)) / float(lanes.size());
     for (size_t i = 0; i < lanes.size(); ++i) {
         const std::string& part = lanes[i];
@@ -402,10 +427,11 @@ void App::drawBandView(const SDL_FRect& r) {
         std::string label = part;
         label[0] = char(std::toupper(label[0]));
         const int n = chart_.count(part, previewDiff_);
-        const std::string count = n < 0 ? "-" : std::to_string(n) + " notes";
+        const std::string count = n < 0 ? "not charted" : std::to_string(n) + " notes";
         fill({x, y, 3 * u_, 22 * u_}, stemColor(part));
-        text(x + 10 * u_, y + 6 * u_, label, kCream, 1.5f * u_, w - 20 * u_);
-        text(x + w - textW(count, 1.25f * u_) - 4 * u_, y + 8 * u_, count, kDim, 1.25f * u_);
+        const float lx = x + 10 * u_ + soundBox(x + 10 * u_, y + 3 * u_, part);
+        text(lx, y + 6 * u_, label, kCream, 1.5f * u_, w - 40 * u_);
+        text(x + w - textW(count, 1.25f * u_) - 4 * u_, y + 8 * u_, count, n < 0 ? kMuted : kDim, 1.25f * u_);
         drawHighway({x, y + 26 * u_, w, r.y + r.h - y - 26 * u_}, partNotes(part, previewDiff_), part == "drums", now);
     }
 }

@@ -52,9 +52,10 @@ def test_tabs_and_chord_sheets_are_told_apart():
 def test_guitar_tab_pitches_rhythm_and_repeat():
     tab = ascii_tab.parse(GUITAR)
     assert not tab.drums
-    first_bar = [(round(n.beat, 2), n.pitch) for n in tab.notes if n.beat < 4]
-    # Low E string open = E2 (40), 3rd fret = G2 (43); A string 2nd fret = B2 (47).
-    assert first_bar[:5] == [(0.24, 40), (1.18, 40), (1.65, 47), (2.12, 40), (2.59, 43)]
+    first_bar = [(n.beat, n.pitch) for n in tab.notes if n.beat < 4]
+    # Low E string open = E2 (40), 3rd fret = G2 (43); A string 2nd fret = B2 (47). The bar's
+    # leading dash is padding; notes land on 16ths.
+    assert first_bar == [(0.0, 40), (1.0, 40), (1.5, 47), (2.0, 40), (2.5, 43), (3.0, 40)]
     assert tab.beats == 16.0  # two bars, played twice
     assert len(tab.notes) == 2 * 10
 

@@ -172,7 +172,10 @@ def parse(text: str, drums: bool | None = None) -> ParsedTab:
         bar_spans = [(a, b) for a, b in zip(bars, bars[1:]) if b - a > 2]
         if not bar_spans:
             continue
-        hits: list[tuple[float, int]] = []
+        # Where each bar's music starts: right after its bar line, less the padding dashes
+        # every bar of the system starts with ("|--7--5--|": 2). Notes are then spread over
+        # 4 beats and snapped to 16ths (text tabs have no real rhythm).
+        found: list[tuple[int, int, int, int]] = []  # (bar, column in the bar's content, its width, pitch)
         for body, piece in zip(system.bodies, pieces):
             if piece is None:
                 continue
@@ -181,8 +184,14 @@ def parse(text: str, drums: bool | None = None) -> ParsedTab:
                 if k is None:
                     continue
                 a, b = bar_spans[k]
-                beat = k * 4 + 4 * (col - a) / (b - a)
-                hits.append((beat, piece if drums else piece + value))
+                start = a + (1 if body[a:a + 1] == "|" else 0)  # after the bar line
+                found.append((k, col - start, b - start, piece if drums else piece + value))
+        lead = min((c for _, c, _, _ in found), default=0)
+        hits: list[tuple[float, int]] = []
+        for k, c, width, pitch in found:
+            content = max(1, width - lead)
+            pos = min(3.75, round((c - lead) / content * 4 * 4) / 4)
+            hits.append((k * 4 + pos, pitch))
         length = 4.0 * len(bar_spans)
         for r in range(system.repeat):
             starts = sorted({b for b, _ in hits})

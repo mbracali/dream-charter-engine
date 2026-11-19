@@ -25,6 +25,13 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | R14 | Band view: guitar, bass, drums (+ keys) highways and the vocals at the same time | ✅ | Song forge default; Mixer toggles the side panels; One part = old single view |
 | R15 | Evil Papagali: find online resources (tabs, chords, lyrics, charts) to make its song better | 🟡 | Research done: [research/evil_papagali.md](research/evil_papagali.md). Best: a human RB3 chart on RhythmVerse; needs a browser download (+ L12) |
 | R16 | Paste button on the Guitar / Bass / Drums boxes: a copied file, a chord sheet or a text (ASCII) tab; text tabs become a MIDI score that guides the forge | ✅ | also Cmd/Ctrl+V over a box; text tabs only correct pitches/chords ("corrigir"), never rhythm; a tab that doesn't match the song is ignored |
+| R17 | Paste opens a text editor: paste and edit the clipboard, then add it to the box (pasted text sheets can be edited again) | ✅ | Overlay::Paste with the shared TextEdit; live "text tab / chord sheet" detection; edit button on .txt sheets |
+| R18 | The app speaks English only: the engine's (Portuguese) messages are translated or kept in forge/forge.log | ✅ | forge.translate / english_error; everything else in forge/forge.log; English genre names |
+| R19 | A tab drives the guitar / bass: notes come only from the sheet (score-only), never from the audio; a tab that doesn't match charts nothing | ✅ | ScoreOnly wraps the engine's Guide (fidelity seguir, drops notes outside the score's span, nothing when it doesn't match); text tabs snapped to 16ths. User's Evil Papagali tab: 73% match, 1245 guitar notes from the tab |
+| R20 | Guitar and bass need a sheet (tab, MIDI, chart or chord sheet) or a "This song has no guitar/bass" checkbox under the box; FORGE is blocked otherwise. Chords alone: audio limited to those chords | ✅ | forgeBlocker (C++) + Plan (Python) |
+| R21 | MIDI files in every box (as a score, or as a chart with PART tracks) | ✅ | tested with a MIDI score of the Evil Papagali tab: same result as the text tab |
+| R22 | Band view: a checkbox over each highway (and the vocals) turns that instrument's sound on / off | ✅ | toggles the stem the part is made from |
+| R23 | Vocals always show (band view, Fine tuning, Export), even when empty | ✅ | |
 
 ## Later
 
