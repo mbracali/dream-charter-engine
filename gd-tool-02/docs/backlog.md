@@ -38,6 +38,7 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | R27 | Chart offset per instrument (band view): shift that chart's notes, or the whole song's audio against the charts; the chart adapts (Fine tuning, Export) | ✅ | chart offset = notes shifted in chart.txt (+ forge.<part>_offset_ms, re-applied by forge.py, kept in undo); song offset = StemPlayer offset + export pads / trims (forge.audio_offset_ms) |
 | R28 | "Rest of the mix" checkbox: hear / mute the stems no charted part uses | ✅ | |
 | R29 | No lyrics -> no vocals track (band view, Fine tuning, Export) | ✅ | vocals strip / tab only when lyricsChoice != none (or the chart has vocals) |
+| R30 | Screens layout board: every screen as movable blocks, for the owner to reorganize; then rebuild the app to match | 🟡 | Board: https://claude.ai/artifact/T6m7EsPGnQwWF5rnFeMc9C (18 frames, 327 blocks, built 2026-11-19). Waiting for the owner's layout |
 
 ## Later
 
