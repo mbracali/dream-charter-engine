@@ -39,6 +39,7 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | R28 | "Rest of the mix" checkbox: hear / mute the stems no charted part uses | ✅ | |
 | R29 | No lyrics -> no vocals track (band view, Fine tuning, Export) | ✅ | vocals strip / tab only when lyricsChoice != none (or the chart has vocals) |
 | R30 | Screens layout board: every screen as movable blocks, for the owner to reorganize; then rebuild the app to match | 🟡 | Board: https://claude.ai/artifact/T6m7EsPGnQwWF5rnFeMc9C (18 frames, 327 blocks, built 2026-11-19). Waiting for the owner's layout |
+| R31 | Guitar Pro 5 (.gp5) support, proven end to end with a real file (Song home, forge, tests on Mac and Linux) | ✅ | Real GP5 of the Evil Papagali tab (guitar + drums tracks): 73% match, 1245 guitar notes, drums driven by its drum track. Fixed: copies of one file in several boxes were aligned twice (now matched by content). Tests: python/tests/test_gp5.py |
 
 ## Later
 

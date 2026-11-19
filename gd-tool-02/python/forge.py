@@ -155,9 +155,14 @@ def install_references(refs: dict[str, Path], fidelity_of: dict[str, str] | None
                  sections=None, anchors=None):
         # One call per file: a file used for several instruments (a full Guitar Pro score in
         # the Guitar and Drums boxes) is aligned once, its pitched tracks carrying the drums.
+        # Each box keeps its own copy of a file, so the same score is found by its content.
+        import hashlib
+
         by_file: dict[Path, list[str]] = {}
+        first_of: dict[str, Path] = {}
         for instrument, file in refs.items():
-            by_file.setdefault(file, []).append(instrument)
+            digest = hashlib.sha256(file.read_bytes()).hexdigest() if file.is_file() else str(file)
+            by_file.setdefault(first_of.setdefault(digest, file), []).append(instrument)
         guides = {}
         for file, instruments in by_file.items():
             try:  # one bad file must not stop the forge: it is skipped, the stems are charted alone

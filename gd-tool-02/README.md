@@ -27,7 +27,10 @@ a step bar at the top (`Cmd/Ctrl+1..4`):
        be made for this audio: no offset search yet);
      - a chord sheet alone (`.txt`, Cifra Club / Ultimate Guitar style): the forge listens to
        the stem and uses only those chords; its lyrics are sung when nothing else gives lyrics;
-     - a file in several boxes (a full Guitar Pro score in Guitar and Drums) is aligned once.
+     - a file in several boxes (a full Guitar Pro score in Guitar, Bass and Drums) is aligned
+       once (copies are matched by content), and each box takes its own track: drop one
+       `.gp5` in every box and it drives every part. Guitar Pro 3-5 (`.gp3 .gp4 .gp5`) needs
+       `pyguitarpro` (in `python/requirements.txt`); `.gpx` / `.gp` 6-8 are read without it.
    - **Drums** come from the drums stem (ADTOF); a drum sheet is optional, and a drum text tab
      alone can't be lined up yet. **This song has no drums** leaves them out.
    - **Keys are never charted** (the keys stem is only audio, mixed into `song.ogg`).

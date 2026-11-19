@@ -390,7 +390,7 @@ void App::drawHome(Project& p, const SDL_FRect& r) {
     text(hx, r.y + 6 * u_, "MUSIC SHEETS", kSand, 1.5f * u_);
     float hy = r.y + 28 * u_;
     for (auto& l : wrap("Guitar and bass need a sheet: a tab, MIDI or chart gives the notes; a chord sheet "
-                        "only limits the chords the forge hears. Drums come from the drums stem.",
+                        "only limits the chords the forge hears. Drums: the stem, or a GP / MIDI drum track.",
                         size_t(hw / (8 * 1.25f * u_)))) {
         text(hx, hy, l, kDim, 1.25f * u_);
         hy += 16 * u_;

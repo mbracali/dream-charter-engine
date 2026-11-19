@@ -17,7 +17,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release >/dev/null
 cmake --build build -j"$(nproc)" 2>&1 | grep -E "error|warning" || true
 test -x build/gd-tool-02
 ctest --test-dir build --output-on-failure
-python3 -m venv .venv && .venv/bin/pip -q install numpy scipy soundfile mido pyyaml pytest
+python3 -m venv .venv && .venv/bin/pip -q install numpy scipy soundfile mido pyyaml pytest pyguitarpro==0.11
 PYTHONPATH=/work .venv/bin/python -m pytest -q python/tests
 # Headless smoke run: a project with a chart, every screen drawn once.
 mkdir -p /tmp/p/Song/forge/A && cd /tmp/p/Song
