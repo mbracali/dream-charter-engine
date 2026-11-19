@@ -16,7 +16,10 @@ std::vector<std::string> App::chartParts() const {
     std::vector<std::string> out;
     for (const char* p : {"guitar", "bass", "drums"})  // never keys (R25)
         if (chart_.hasPart(p)) out.push_back(p);
-    out.push_back("vocals");  // always (R23), even with no syllables
+    const Project* p = nullptr;
+    for (auto& q : projects_)
+        if (q.id == current_) p = &q;
+    if (!chart_.vocals.empty() || (p && showVocals(*p))) out.push_back("vocals");  // R23 / R29
     return out;
 }
 
@@ -158,6 +161,7 @@ void App::drawForgeScreen(Project& p, const SDL_FRect& r) {
     if (bandView_ && !showPanels_) {  // the band gets the whole width
         drawPreview(p, {r.x, top, r.w, r.y + r.h - top});
         drawDropdown();
+        drawOffsetPopover();
         return;
     }
     const float leftW = std::min(440 * u_, r.w * 0.36f);
@@ -166,6 +170,7 @@ void App::drawForgeScreen(Project& p, const SDL_FRect& r) {
     drawForgeSettings(p, {r.x, top + mixH + 16 * u_, leftW, r.y + r.h - top - mixH - 16 * u_});
     drawPreview(p, {r.x + leftW + 20 * u_, top, r.w - leftW - 20 * u_, r.y + r.h - top});
     drawDropdown();
+    drawOffsetPopover();
 }
 
 void App::drawForgeProgress(Project& p, const SDL_FRect& r) {
@@ -337,6 +342,21 @@ void App::drawPreview(Project& p, const SDL_FRect& r) {
     auto parts = chartParts();
     if (bandView_) {
         text(r.x + 14 * u_, r.y + 20 * u_, "THE BAND", kSand, 1.75f * u_);
+        {  // R28: the stems no charted part uses ("other", keys, absent parts)
+            const auto rest = restOfMix(p);
+            bool on = false;
+            for (size_t i : rest) on = on || !player_.stems()[i]->muted;
+            const float cx = r.x + 14 * u_ + textW("THE BAND", 1.75f * u_) + 30 * u_;
+            SDL_FRect cb{cx, r.y + 18 * u_, 16 * u_, 16 * u_};
+            checkbox(cb, on);
+            const std::string l = "Rest of the mix";
+            text(cb.x + 24 * u_, cb.y + 3 * u_, l, rest.empty() ? kMuted : on ? kCream : kDim, 1.25f * u_);
+            if (!rest.empty())
+                hit({cb.x - 4 * u_, cb.y - 6 * u_, textW(l, 1.25f * u_) + 34 * u_, 28 * u_}, [this, rest, on](float, float) {
+                    for (size_t i : rest)
+                        if (player_.stems()[i]->muted == on) player_.toggleMute(i);
+                });
+        }
         const std::vector<std::string> diffs = {"Easy", "Medium", "Hard", "Expert"};
         segmented(r.x + r.w - 12 * u_ - segmentedW(diffs), r.y + 10 * u_, diffs, previewDiff_, [this](int i) { previewDiff_ = i; });
         const float overviewH = 30 * u_;
@@ -382,8 +402,9 @@ void App::drawPreview(Project& p, const SDL_FRect& r) {
     }
 }
 
-// Every part at once, like a Rock Band screen: the vocals across the top, then one highway
-// per charted part (guitar, bass, drums, keys) side by side, all on the same playhead.
+// Every part at once, like a Rock Band screen: the vocals across the top (when the song has
+// lyrics), then one highway per part (guitar, bass, drums) side by side, all on one playhead.
+// Over each: its sound on / off and its Chart offset (sync).
 void App::drawBandView(const SDL_FRect& r) {
     const float now = float(player_.playhead());
     Project* p = currentProject();
@@ -404,8 +425,29 @@ void App::drawBandView(const SDL_FRect& r) {
             });
         return cb.w + 10 * u_;
     };
+    // Chart offset (R27): opens the sync popover under the button.
+    auto offsetButton = [&](float right, float y, const std::string& part) {
+        const int ms = p ? std::atoi(p->doc.get("forge", part + "_offset_ms").c_str()) : 0;
+        const std::string label = ms ? "Chart offset " + std::string(ms > 0 ? "+" : "") + std::to_string(ms) + " ms" : "Chart offset";
+        const float ts = 1.1f * u_, w = textW(label, ts) + 16 * u_;
+        SDL_FRect b{right - w, y, w, 20 * u_};
+        const bool open = offsetPart_ == part;
+        fill(b, open ? kOxblood : hovered(b) ? kHover : kBar);
+        frame(b, open ? kOxblood : kMuted);
+        text(b.x + 8 * u_, b.y + 6 * u_, label, ms ? kCream : kSand, ts);
+        hit(b, [this, part, b](float, float) {
+            if (offsetPart_ == part) {
+                offsetPart_.clear();
+                return;
+            }
+            offsetPart_ = part;
+            offsetAnchor_ = b;
+        });
+        if (open) offsetAnchor_ = b;
+        return w;
+    };
     float y = r.y;
-    {  // Vocals: always (R23), even with no syllables.
+    if (p && (showVocals(*p) || !chart_.vocals.empty())) {  // R29: no lyrics, no vocals track
         const float vh = std::min(r.h * 0.26f, 190 * u_);
         SDL_FRect strip{r.x + 8 * u_, y, r.w - 16 * u_, vh};
         fill(strip, {0x13, 0x11, 0x15, 255});
@@ -413,9 +455,10 @@ void App::drawBandView(const SDL_FRect& r) {
         const float sx = strip.x + 10 * u_ + soundBox(strip.x + 10 * u_, strip.y + 3 * u_, "vocals");
         text(sx, strip.y + 6 * u_, chart_.vocals.empty() ? "Vocals" : "Vocals  " + std::to_string(chart_.vocals.size()) + " syllables",
              kSand, 1.25f * u_);
+        if (!chart_.vocals.empty()) offsetButton(strip.x + strip.w - 8 * u_, strip.y + 1 * u_, "vocals");
         drawVocalBoard({strip.x, strip.y + 14 * u_, strip.w, strip.h - 14 * u_}, now);
         if (chart_.vocals.empty()) {
-            const std::string a = "No vocals charted: add lyrics on Song home and forge again.";
+            const std::string a = "No vocals came out of the lyrics: check them on Song home and forge again.";
             text(strip.x + (strip.w - textW(a, 1.25f * u_)) / 2, strip.y + strip.h / 2, a, kMuted, 1.25f * u_);
         }
         y += vh + 8 * u_;
@@ -431,8 +474,125 @@ void App::drawBandView(const SDL_FRect& r) {
         const std::string count = n < 0 ? "not charted" : std::to_string(n) + " notes";
         fill({x, y, 3 * u_, 22 * u_}, stemColor(part));
         const float lx = x + 10 * u_ + soundBox(x + 10 * u_, y + 3 * u_, part);
-        text(lx, y + 6 * u_, label, kCream, 1.5f * u_, w - 40 * u_);
-        text(x + w - textW(count, 1.25f * u_) - 4 * u_, y + 8 * u_, count, n < 0 ? kMuted : kDim, 1.25f * u_);
+        text(lx, y + 6 * u_, label, kCream, 1.5f * u_);
+        float right = x + w - 4 * u_;
+        if (n >= 0) right -= offsetButton(right, y + 1 * u_, part) + 8 * u_;
+        const float cx = lx + textW(label, 1.5f * u_) + 12 * u_;
+        if (right - textW(count, 1.1f * u_) > cx) text(right - textW(count, 1.1f * u_), y + 8 * u_, count, n < 0 ? kMuted : kDim, 1.1f * u_);
         drawHighway({x, y + 26 * u_, w, r.y + r.h - y - 26 * u_}, partNotes(part, previewDiff_), part == "drums", now);
     }
+}
+
+// R29: a vocals track only when the song has lyrics (typed, a file; or a chart with vocals).
+bool App::showVocals(const Project& p) const { return lyricsChoice(p) != "none"; }
+
+// Stems no charted part plays: other, keys, and the stems of absent / uncharted parts.
+std::vector<size_t> App::restOfMix(const Project& p) const {
+    std::vector<std::string> used;
+    for (const char* part : {"guitar", "bass"})
+        if (chart_.hasPart(part)) used.push_back(sourceOf(p, part));
+    if (chart_.hasPart("drums")) used.push_back("drums");
+    if (!chart_.vocals.empty()) used.push_back("vocals");
+    std::vector<size_t> out;
+    for (size_t i = 0; i < player_.stems().size(); ++i) {
+        const std::string& name = player_.stems()[i]->name;
+        if (name != "mix" && std::find(used.begin(), used.end(), name) == used.end()) out.push_back(i);
+    }
+    return out;
+}
+
+// Move a part's chart (every difficulty; the vocals with their phrases) by `seconds`.
+void App::shiftChart(const std::string& part, float seconds) {
+    if (seconds == 0) return;
+    pushUndo();
+    if (part == "vocals") {
+        for (auto& v : chart_.vocals) v.t = std::max(0.f, v.t + seconds);
+        for (auto& [a, b] : chart_.phrases) {
+            a = std::max(0.f, a + seconds);
+            b = std::max(0.f, b + seconds);
+        }
+    } else if (auto it = chart_.parts.find(part); it != chart_.parts.end()) {
+        for (auto& diff : it->second)
+            for (auto& n : diff) n.t = std::max(0.f, n.t + seconds);
+    }
+    chart_.sort();
+    chart_.offsetMs[part] += int(std::lround(seconds * 1000));
+    chartChanged();
+    syncOffsets();
+}
+
+// project.yaml follows the chart's offsets (after a shift, an undo or a redo).
+void App::syncOffsets() {
+    Project* p = currentProject();
+    if (!p || chartFor_ != p->id) return;
+    for (const char* part : {"guitar", "bass", "drums", "vocals"}) {
+        auto it = chart_.offsetMs.find(part);
+        const int ms = it == chart_.offsetMs.end() ? 0 : it->second;
+        setValue(*p, "forge", std::string(part) + "_offset_ms", ms ? std::to_string(ms) : "");
+    }
+}
+
+// The song's audio against every chart (positive: the audio plays later). Export pads / trims.
+void App::setSongOffset(int ms) {
+    Project* p = currentProject();
+    if (!p) return;
+    ms = std::clamp(ms, -5000, 5000);
+    setValue(*p, "forge", "audio_offset_ms", ms ? std::to_string(ms) : "");
+    player_.setOffset(ms / 1000.0);
+}
+
+// The sync popover under a part's Chart offset button. Playback goes on while it is open,
+// so the notes can be nudged until they land on the sound.
+void App::drawOffsetPopover() {
+    Project* p = currentProject();
+    if (offsetPart_.empty() || !p) return;
+    std::string label = offsetPart_;
+    label[0] = char(std::toupper(label[0]));
+    const float w = 560 * u_, h = 196 * u_;
+    int ww, wh;
+    SDL_GetCurrentRenderOutputSize(renderer_, &ww, &wh);
+    SDL_FRect box{std::min(offsetAnchor_.x + offsetAnchor_.w - w, float(ww) - w - 8 * u_), offsetAnchor_.y + offsetAnchor_.h + 6 * u_, w, h};
+    box.x = std::max(8 * u_, box.x);
+    offsetRect_ = box;
+    fill({box.x + 4 * u_, box.y + 5 * u_, box.w, box.h}, kInk, 180);
+    fill(box, kPanel);
+    frame(box, kMuted);
+    fill({box.x, box.y, box.w, 3 * u_}, kOxblood);
+    hit(box, [](float, float) {});  // clicks inside stay inside
+    float y = box.y + 14 * u_;
+    const float x = box.x + 16 * u_;
+    text(x, y, "Sync " + label, kCream, 1.75f * u_);
+    y += 28 * u_;
+    segmented(x, y, {label + " chart", "Whole song audio"}, offsetMode_, [this](int i) { offsetMode_ = i; }, 28 * u_);
+    y += 40 * u_;
+    const int songMs = std::atoi(p->doc.get("forge", "audio_offset_ms").c_str());
+    const int chartMs = std::atoi(p->doc.get("forge", offsetPart_ + "_offset_ms").c_str());
+    const int value = offsetMode_ == 0 ? chartMs : songMs;
+    const std::string v = (value > 0 ? "+" : "") + std::to_string(value) + " ms";
+    text(x, y + 4 * u_, v, value ? kCream : kDim, 2.5f * u_);
+    // Steps: chart later (+) moves the notes later; song later delays the audio.
+    float bx = x + 130 * u_;
+    for (int step : {-100, -10, -1, 1, 10, 100}) {
+        const std::string l = (step > 0 ? "+" : "") + std::to_string(step);
+        bx += button(bx, y, l, [this, step] {
+                  Project* q = currentProject();
+                  if (!q) return;
+                  if (offsetMode_ == 0) shiftChart(offsetPart_, step / 1000.f);
+                  else setSongOffset(std::atoi(q->doc.get("forge", "audio_offset_ms").c_str()) + step);
+              }, true, false, 28 * u_) + 4 * u_;
+    }
+    y += 40 * u_;
+    text(x, y, offsetMode_ == 0 ? "+ moves the " + offsetPart_ + " notes later, - earlier."
+                                : "+ plays the audio later than every chart, - earlier.",
+         kDim, 1.1f * u_, w - 32 * u_);
+    y += 18 * u_;
+    text(x, y, "Left / Right: 10 ms, Shift: 1 ms. Keep playing to hear it.", kMuted, 1.1f * u_, w - 32 * u_);
+    y += 24 * u_;
+    button(x, y, "Reset", [this] {
+        Project* q = currentProject();
+        if (!q) return;
+        if (offsetMode_ == 0) shiftChart(offsetPart_, -std::atoi(q->doc.get("forge", offsetPart_ + "_offset_ms").c_str()) / 1000.f);
+        else setSongOffset(0);
+    }, value != 0, false, 26 * u_);
+    button(box.x + box.w - 16 * u_ - buttonW("Done"), y, "Done", [this] { offsetPart_.clear(); }, true, true, 26 * u_);
 }

@@ -35,8 +35,14 @@ public:
     bool empty() const { return stems_.empty(); }
     bool playing() const { return playing_; }
 
+    // Times are chart times: the audio plays `offset` seconds later than the charts
+    // (Song forge > Chart offset > the song). Negative: earlier.
     double duration() const;
     double playhead() const;
+    void setOffset(double seconds);
+    double offset() const { return offset_; }
+    void setVolume(float volume);  // the app's own volume, 0..1 (not the OS volume)
+    float volume() const { return volume_; }
     void seek(double seconds);  // keeps playing/paused
     void togglePlay();
     void update();  // stops at the end
@@ -47,10 +53,13 @@ public:
 
 private:
     void refill(double seconds);
+    double audioLength() const;
     void applyGain(Stem& s);
 
     SDL_AudioDeviceID device_ = 0;
     std::vector<std::unique_ptr<Stem>> stems_;
     bool playing_ = false;
     double position_ = 0;
+    double offset_ = 0;
+    float volume_ = 1.f;
 };

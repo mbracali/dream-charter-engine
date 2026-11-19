@@ -130,7 +130,8 @@ bool App::init(int argc, char** argv) {
         else if (a == "--forge") forgeAtStart_ = true;
         else if (a == "--selftest") selfTest_ = true;
         else if (a == "--paste" && i + 1 < argc) pasteAtStart_.push_back(argv[++i]);  // debug: paste into a box
-        else if (a == "--one-part") bandView_ = false;  // Song forge: the single-part view
+        else if (a == "--one-part") bandView_ = false;
+        else if (a == "--offset" && i + 1 < argc) overlayAtStart_ = std::string("offset:") + argv[++i];  // debug: sync popover  // Song forge: the single-part view
         else if (a == "--panels") showPanels_ = true;   // Song forge: band view with the mixer and settings  // test the editor on the first project, then quit
         else if (a == "--overlay" && i + 1 < argc) overlayAtStart_ = argv[++i];  // details / lyrics / help
         else paths.push_back(a);
@@ -173,6 +174,7 @@ bool App::init(int argc, char** argv) {
     if (overlayAtStart_ == "details") overlay_ = Overlay::Details;
     else if (overlayAtStart_ == "lyrics") overlay_ = Overlay::Lyrics;
     else if (overlayAtStart_ == "help") overlay_ = Overlay::Help;
+    else if (overlayAtStart_.rfind("offset:", 0) == 0) offsetPart_ = overlayAtStart_.substr(7);
     return true;
 }
 
@@ -235,6 +237,8 @@ void App::loadSettings(const std::string& overridePath) {
     mode_ = settings_.get("settings", "separation_mode") == "simple" ? "simple" : "demucs";
     if (!modeOverride_.empty()) mode_ = modeOverride_;
     sidebarCollapsed_ = settings_.get("settings", "sidebar_collapsed") == "true";
+    const std::string vol = settings_.get("settings", "volume");
+    player_.setVolume(vol.empty() ? 0.8f : float(std::atof(vol.c_str())));
 }
 
 void App::saveSettings() {
@@ -243,6 +247,9 @@ void App::saveSettings() {
     settings_.set("settings", "yarg_dir", yargDir_.string());
     settings_.set("settings", "separation_mode", mode_);
     settings_.set("settings", "sidebar_collapsed", sidebarCollapsed_ ? "true" : "false");
+    char vol[16];
+    SDL_snprintf(vol, sizeof vol, "%.2f", double(player_.volume()));
+    settings_.set("settings", "volume", vol);
     if (!settings_.save(settingsPath_)) status_ = "Could not save the settings to " + settingsPath_.string();
 }
 
@@ -613,6 +620,7 @@ void App::setScreen(Screen s) {
     unfocus();
     dropOpen_ = false;
     screen_ = s;
+    offsetPart_.clear();
     logEvent("screen " + std::to_string(int(s)) + ": " + p->id);
     if (s == Screen::Forge || s == Screen::Tune) {
         if (stemsFor_ != p->id) loadStems(*p);
@@ -629,6 +637,7 @@ void App::setScreen(Screen s) {
 void App::loadStems(const Project& p) {
     player_.clear();
     stemsFor_ = p.id;
+    player_.setOffset(std::atof(p.doc.get("forge", "audio_offset_ms").c_str()) / 1000.0);
     std::error_code ec;
     std::vector<fs::path> files;
     for (auto& e : fs::directory_iterator(p.stemsDir(), ec))
@@ -654,6 +663,8 @@ void App::loadChart(const Project& p) {
     if (chartFor_ == p.id) return;
     chartFor_ = p.id;
     chart_.load(p.chartFile());
+    for (const char* part : {"guitar", "bass", "drums", "vocals"})
+        if (const int ms = std::atoi(p.doc.get("forge", std::string(part) + "_offset_ms").c_str())) chart_.offsetMs[part] = ms;
     chartDirty_ = false;
     sel_ = -1;
 }
@@ -864,6 +875,8 @@ void App::handle(SDL_Event& e) {
                 for (size_t i = 0; i < menus_.size(); ++i)
                     if (inside(menus_[i].titleRect, mouseX_, mouseY_)) openMenu_ = int(i);
             if (drag_ != Drag::None) tuneMouseMove(mouseX_, mouseY_);
+            if (volumeDrag_ && volumeRect_.w > 0)
+                player_.setVolume((mouseX_ - volumeRect_.x) / volumeRect_.w);
             break;
         case SDL_EVENT_MOUSE_WHEEL: {
             const bool zoom = SDL_GetModState() & (SDL_KMOD_GUI | SDL_KMOD_CTRL);
@@ -872,7 +885,10 @@ void App::handle(SDL_Event& e) {
                 ed.scroll = std::max(0, ed.scroll - int(e.wheel.y * 3));
             }
             else if (overlay_ != Overlay::None) break;
-            else if (inside(sidebarRect_, mouseX_, mouseY_)) sidebarScroll_ = std::max(0.f, sidebarScroll_ - e.wheel.y * 40);
+            else if (inside(volumeRect_, mouseX_, mouseY_)) {
+                player_.setVolume(player_.volume() + e.wheel.y * 0.05f);
+                saveSettings();
+            } else if (inside(sidebarRect_, mouseX_, mouseY_)) sidebarScroll_ = std::max(0.f, sidebarScroll_ - e.wheel.y * 40);
             else if (screen_ == Screen::Tune && (inside(rollRect_, mouseX_, mouseY_) || inside(rulerRect_, mouseX_, mouseY_)))
                 tuneWheel(e.wheel.x, e.wheel.y, zoom);
             else if ((screen_ == Screen::Forge || screen_ == Screen::Tune) && inside(boardRect_, mouseX_, mouseY_))
@@ -891,6 +907,10 @@ void App::handle(SDL_Event& e) {
         }
         case SDL_EVENT_MOUSE_BUTTON_UP:
             if (drag_ != Drag::None) tuneMouseUp();
+            if (volumeDrag_) {
+                volumeDrag_ = false;
+                saveSettings();
+            }
             break;
         default: break;
     }
@@ -996,7 +1016,16 @@ void App::onKey(SDL_Keycode key, SDL_Keymod mod) {
         }
         return;
     }
+    if (!offsetPart_.empty() && (key == SDLK_LEFT || key == SDLK_RIGHT)) {  // nudge the open sync popover
+        const int step = (key == SDLK_RIGHT ? 1 : -1) * ((mod & SDL_KMOD_SHIFT) ? 1 : 10);
+        if (Project* p = currentProject()) {
+            if (offsetMode_ == 0) shiftChart(offsetPart_, step / 1000.f);
+            else setSongOffset(std::atoi(p->doc.get("forge", "audio_offset_ms").c_str()) + step);
+        }
+        return;
+    }
     if (key == SDLK_ESCAPE) {
+        offsetPart_.clear();
         openMenu_ = -1;
         dropOpen_ = false;
         if (screen_ == Screen::Tune) sel_ = -1;
@@ -1049,6 +1078,9 @@ void App::onClick(float x, float y) {
     if (dropOpen_ && !inside(dropRect_, x, y)) {
         dropOpen_ = false;
         return;
+    }
+    if (!offsetPart_.empty() && !inside(offsetRect_, x, y) && !inside(offsetAnchor_, x, y)) {
+        offsetPart_.clear();  // a click outside the sync popover closes it (and still counts)
     }
     for (auto it = hits_.rbegin(); it != hits_.rend(); ++it)
         if (inside(it->rect, x, y)) {
@@ -1610,12 +1642,26 @@ void App::drawStatusBar(const SDL_FRect& r) {
     fill(r, kBar);
     fill({r.x, r.y, r.w, u_}, kInk);
     const float ts = 1.25f * u_, pad = 12 * u_, ty = r.y + (r.h - 8 * ts) / 2;
-    std::string right = "Stems: " + std::string(mode_ == "demucs" ? "Demucs 6 stems" : "simple filters");
+    // The app's volume (R26), on the right: a slider, independent of the OS volume.
+    const float sw = 130 * u_, sx = r.x + r.w - pad - sw, sy = r.y + r.h / 2;
+    volumeRect_ = {sx - 4 * u_, r.y + 2 * u_, sw + 8 * u_, r.h - 4 * u_};
+    const float v = player_.volume();
+    fill({sx, sy - 2 * u_, sw, 4 * u_}, kInk);
+    fill({sx, sy - 2 * u_, sw * v, 4 * u_}, kOxblood);
+    shape::ellipse(renderer_, sx + sw * v, sy, 6 * u_, 6 * u_, shape::fcolor(hovered(volumeRect_) || volumeDrag_ ? kCream : kSand));
+    const std::string vl = "Volume " + std::to_string(int(std::lround(v * 100))) + "%";
+    const float vlw = textW(vl, ts);
+    text(sx - vlw - 10 * u_, ty, vl, kDim, ts);
+    hit(volumeRect_, [this](float x, float) {
+        volumeDrag_ = true;
+        player_.setVolume((x - volumeRect_.x - 4 * u_) / (volumeRect_.w - 8 * u_));
+    });
+    std::string right = "Stems: " + std::string(mode_ == "demucs" ? "Demucs" : "filters");
     if (!jobs_.empty()) right = std::to_string(jobs_.size()) + " queued   " + right;
-    const float rw = textW(right, ts);
+    const float rw = textW(right, ts), rx = sx - vlw - 30 * u_ - rw;
     if (active_) fill({r.x + pad, r.y + r.h / 2 - 3 * u_, 6 * u_, 6 * u_}, kOxblood);
-    text(r.x + pad + (active_ ? 14 * u_ : 0), ty, status_, active_ ? kCream : kDim, ts, r.w - rw - 4 * pad);
-    text(r.x + r.w - pad - rw, ty, right, kDim, ts);
+    text(r.x + pad + (active_ ? 14 * u_ : 0), ty, status_, active_ ? kCream : kDim, ts, rx - r.x - 3 * pad);
+    text(rx, ty, right, kMuted, ts);
 }
 
 // A modal panel over a dimmed window; returns its body. Clicks outside it go nowhere.

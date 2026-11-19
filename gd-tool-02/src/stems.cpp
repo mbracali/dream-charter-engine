@@ -28,7 +28,10 @@ SDL_Color stemColor(const std::string& name) {
 
 bool StemPlayer::open() {
     device_ = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
-    if (device_) SDL_PauseAudioDevice(device_);
+    if (device_) {
+        SDL_PauseAudioDevice(device_);
+        SDL_SetAudioDeviceGain(device_, volume_ * volume_);
+    }
     return device_ != 0;
 }
 
@@ -94,10 +97,25 @@ void StemPlayer::clear() {
     position_ = 0;
 }
 
-double StemPlayer::duration() const {
+double StemPlayer::audioLength() const {
     double d = 0;
     for (auto& s : stems_) d = std::max(d, s->seconds());
     return d;
+}
+
+// In chart time: where the (offset) audio ends.
+double StemPlayer::duration() const { return std::max(0.0, audioLength() + offset_); }
+
+void StemPlayer::setOffset(double seconds) {
+    if (seconds == offset_) return;
+    const double t = playing_ ? playhead() : position_;
+    offset_ = seconds;
+    seek(t);
+}
+
+void StemPlayer::setVolume(float volume) {
+    volume_ = std::clamp(volume, 0.f, 1.f);
+    if (device_) SDL_SetAudioDeviceGain(device_, volume_ * volume_);  // a squared curve sounds even
 }
 
 // Seconds into the song: what was queued minus what is still waiting.
@@ -117,9 +135,14 @@ void StemPlayer::refill(double seconds) {
     for (auto& s : stems_) {
         if (!s->stream) continue;
         SDL_ClearAudioStream(s->stream);
-        size_t start = std::min(size_t(position_ * s->spec.freq) * size_t(s->spec.channels), s->pcm.size());
+        const double audioAt = position_ - offset_;  // where the audio is at this chart time
+        if (audioAt < 0) {  // the audio starts later: silence first
+            std::vector<int16_t> zeros(size_t(-audioAt * s->spec.freq) * size_t(s->spec.channels), 0);
+            SDL_PutAudioStreamData(s->stream, zeros.data(), int(zeros.size() * 2));
+        }
+        size_t start = std::min(size_t(std::max(0.0, audioAt) * s->spec.freq) * size_t(s->spec.channels), s->pcm.size());
         SDL_PutAudioStreamData(s->stream, s->pcm.data() + start, int((s->pcm.size() - start) * 2));
-        double pad = duration() - s->seconds();
+        double pad = audioLength() - s->seconds();
         if (pad > 0) {  // every stream ends together (the playhead reads stems_[0])
             std::vector<int16_t> zeros(size_t(pad * s->spec.freq) * size_t(s->spec.channels), 0);
             SDL_PutAudioStreamData(s->stream, zeros.data(), int(zeros.size() * 2));

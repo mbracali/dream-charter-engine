@@ -66,6 +66,15 @@ def load_stem(path: Path) -> tuple[np.ndarray, int]:
     return data[:, :2], sr
 
 
+def offset_audio(data: np.ndarray, sr: int, ms: int) -> np.ndarray:
+    """The song's audio against the charts (Song forge > Chart offset > Whole song audio):
+    positive = the audio plays later (silence first), negative = earlier (its start is cut)."""
+    frames = int(round(abs(ms) / 1000.0 * sr))
+    if ms > 0:
+        return np.concatenate([np.zeros((frames, data.shape[1]), dtype=data.dtype), data])
+    return data[frames:] if ms < 0 else data
+
+
 def write_ogg(path: Path, data: np.ndarray, sr: int) -> None:
     """Vorbis, in blocks: libsndfile (1.2) crashes when a whole song is written in one call."""
     data = np.clip(data, -1.0, 1.0).astype(np.float32)
@@ -94,6 +103,7 @@ def export_target(project: Path, doc: dict, chart: chart_text.Chart, base_midi: 
 
     # Audio: one stem per exported part, the rest mixed into song.ogg.
     forge = doc.get("forge") or {}
+    audio_ms = int(float(forge.get("audio_offset_ms") or 0))
     stems_dir = project / "stems"
     source = {p: str(forge.get(f"{p}_source") or p) for p in ("guitar", "bass")}
     source.update({"drums": "drums", "vocals": "vocals"})
@@ -108,7 +118,7 @@ def export_target(project: Path, doc: dict, chart: chart_text.Chart, base_midi: 
     for part, stem in used.items():
         emit("STATUS", f"{label}: {part}.ogg")
         data, sr = load_stem(stems_dir / f"{stem}.wav")
-        write_ogg(out / f"{part}.ogg", data, sr)
+        write_ogg(out / f"{part}.ogg", offset_audio(data, sr, audio_ms), sr)
         done += 1
         progress(done / steps)
     if rest:
@@ -121,7 +131,7 @@ def export_target(project: Path, doc: dict, chart: chart_text.Chart, base_midi: 
             else:
                 n = min(len(mix), len(data))
                 mix = mix[:n] + data[:n]
-        write_ogg(out / "song.ogg", mix, sr)
+        write_ogg(out / "song.ogg", offset_audio(mix, sr, audio_ms), sr)
         done += 1
         progress(done / steps)
 

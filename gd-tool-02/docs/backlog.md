@@ -34,6 +34,10 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | R23 | Vocals always show (band view, Fine tuning, Export), even when empty | ✅ | |
 | R24 | "This song has no drums" checkbox: drums are not forged | ✅ | `sheets: drums_absent` |
 | R25 | No keys at all: remove "Chart keys too", the keys part (forge, band view, Fine tuning, Export, imported charts) | ✅ | the keys stem stays as audio (song.ogg); PART KEYS of imported charts is ignored |
+| R26 | App volume slider in the bottom bar, independent of the OS volume (remembered) | ✅ | SDL_SetAudioDeviceGain on the app's device; settings.yaml volume |
+| R27 | Chart offset per instrument (band view): shift that chart's notes, or the whole song's audio against the charts; the chart adapts (Fine tuning, Export) | ✅ | chart offset = notes shifted in chart.txt (+ forge.<part>_offset_ms, re-applied by forge.py, kept in undo); song offset = StemPlayer offset + export pads / trims (forge.audio_offset_ms) |
+| R28 | "Rest of the mix" checkbox: hear / mute the stems no charted part uses | ✅ | |
+| R29 | No lyrics -> no vocals track (band view, Fine tuning, Export) | ✅ | vocals strip / tab only when lyricsChoice != none (or the chart has vocals) |
 
 ## Later
 

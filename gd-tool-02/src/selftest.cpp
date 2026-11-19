@@ -131,6 +131,27 @@ int App::selfTest() {
         if (v.lyric == "la" && v.pitch == 65) found = true;
     check(found, "chart.txt has the new syllable");
 
+    // Sync (R27): a chart offset moves that part's notes (every difficulty), and is saved.
+    {
+        auto* g = &chart_.parts["guitar"][3];
+        const float first = g->front().t;
+        const int before = std::atoi(p->doc.get("forge", "guitar_offset_ms").c_str());
+        shiftChart("guitar", 0.120f);
+        g = &chart_.parts["guitar"][3];
+        check(std::abs(g->front().t - (first + 0.120f)) < 1e-4f, "Chart offset +120 ms moves the guitar notes");
+        check(std::atoi(p->doc.get("forge", "guitar_offset_ms").c_str()) == before + 120, "and remembers the offset");
+        undo();
+        check(std::abs(chart_.parts["guitar"][3].front().t - first) < 1e-4f, "undo puts them back");
+        check(std::atoi(p->doc.get("forge", "guitar_offset_ms").c_str()) == before, "and the saved offset too");
+        // The song's audio against the charts.
+        const double length = player_.duration();
+        setSongOffset(250);
+        check(std::abs(player_.offset() - 0.25) < 1e-9 && std::abs(player_.duration() - (length + 0.25)) < 1e-6,
+              "song offset +250 ms plays the audio later");
+        setSongOffset(0);
+        check(std::abs(player_.duration() - length) < 1e-6, "and back to 0");
+    }
+
     // Put everything back.
     while (!undo_.empty()) undo();
     const bool same = chart_.vocals.size() == original.vocals.size() && chart_.count("guitar", 3) == original.count("guitar", 3) &&

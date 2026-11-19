@@ -32,6 +32,9 @@ struct Chart {
     std::map<std::string, std::array<std::vector<ChartNote>, 4>> parts;  // part -> Easy..Expert, by time
     std::vector<VocalNote> vocals;
     std::vector<std::pair<float, float>> phrases;
+    // Manual sync per part in ms (not in chart.txt: project.yaml forge.<part>_offset_ms). Kept
+    // here so undo / redo bring the offset back with the notes.
+    std::map<std::string, int> offsetMs;
 
     bool load(const std::filesystem::path& file);
     bool save(const std::filesystem::path& file) const;  // atomic (.tmp + rename)

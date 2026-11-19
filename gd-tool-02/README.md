@@ -38,7 +38,12 @@ a step bar at the top (`Cmd/Ctrl+1..4`):
    then charts every part with dream-charter-engine (`ai_charter`) and the sheets. The
    record spins with a progress bar. Then the **Band** view: the vocals across the top and
    every instrument's highway side by side (guitar, bass, drums), all on one playhead,
-   Easy..Expert; a checkbox over each part turns its sound on / off, and the vocals always show. **Mixer** shows the stems mixer (mute / solo / waveforms) and the forge
+   Easy..Expert. Over each part: a checkbox for its sound, and **Chart offset** (sync): shift
+   that part's chart (its notes really move, every difficulty) or the **whole song audio**
+   against every chart (Export pads / trims the audio), by -100 .. +100 ms steps or
+   Left / Right; offsets are kept across forges and undo. **Rest of the mix** turns on / off the
+   stems no part uses (other, keys, absent parts). The vocals show only when the song has
+   lyrics. The bottom bar has the app's own **Volume** (independent of the system volume). **Mixer** shows the stems mixer (mute / solo / waveforms) and the forge
    settings beside it; **One part** shows a single big highway instead. The settings:
    - **Rules**: the engine's genre presets (`ai_charter/genres/`);
    - **Drums**: Heard 0.9 / **Steady** 0.8 / Locked 0.7 (engine `repeat_similarity`: bars at

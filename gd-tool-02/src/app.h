@@ -277,6 +277,14 @@ public:
     void drawForgeSettings(Project& p, const SDL_FRect& r);
     void drawPreview(Project& p, const SDL_FRect& r);
     void drawBandView(const SDL_FRect& r);
+    // Sync (R27): a part's chart moves (its notes really shift), or the song's audio moves
+    // against every chart. project.yaml forge: <part>_offset_ms, audio_offset_ms.
+    void drawOffsetPopover();
+    void shiftChart(const std::string& part, float seconds);
+    void setSongOffset(int ms);
+    void syncOffsets();
+    bool showVocals(const Project& p) const;  // R29: only when the song has lyrics
+    std::vector<size_t> restOfMix(const Project& p) const;  // R28: stems no charted part uses
     float partTabs(float x, float y, const std::vector<std::string>& parts, std::string& selected);
     std::vector<std::string> chartParts() const;
     const std::vector<std::pair<std::string, std::string>>& genres();
@@ -365,6 +373,11 @@ public:
     bool listenPart_ = false;
     bool bandView_ = true;     // Song forge: every part at once (else one big highway)
     bool showPanels_ = false;  // Song forge, band view: the mixer and settings beside it
+    std::string offsetPart_;   // the part whose sync popover is open ("" closed)
+    int offsetMode_ = 0;       // 0 this chart, 1 the song (audio)
+    SDL_FRect offsetAnchor_{}, offsetRect_{};
+    bool volumeDrag_ = false;
+    SDL_FRect volumeRect_{};
 
     std::string tunePart_ = "guitar";
     int tuneDiff_ = 3;

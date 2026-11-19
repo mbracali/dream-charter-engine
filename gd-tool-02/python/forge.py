@@ -324,6 +324,9 @@ class Plan:
             self.refs.pop("drums", None)
             self.skipped.append("drums")
         self.parts = parts
+        # Manual sync (Song forge > Chart offset), kept across forges: ms per part.
+        self.offsets = {part: int(float(forge.get(f"{part}_offset_ms") or 0))
+                        for part in ("guitar", "bass", "drums", "vocals")}
         # An attached chart replaces the engine for its part.
         self.engine_parts = [p for p in parts if p not in self.charts]
         # Riff steadiness only for parts the engine hears; sheet-driven parts stay as written.
@@ -438,7 +441,25 @@ def build_chart(project: Path, notes_mid: Path, plan: Plan) -> chart_text.Chart:
             emit("STATUS", f"{part}: using the chart {file.name} as-is")
         else:
             emit("STATUS", f"{file.name} has no {part} part")
+    apply_offsets(chart, plan.offsets)
     return chart
+
+
+def apply_offsets(chart: chart_text.Chart, offsets: dict[str, int]) -> None:
+    """The user's manual sync (ms per part), applied again to a fresh forge."""
+    for part, ms in offsets.items():
+        if not ms:
+            continue
+        shift = ms / 1000.0
+        if part == "vocals":
+            for v in chart.vocals:
+                v.t = max(0.0, v.t + shift)
+            chart.phrases = [(max(0.0, a + shift), max(0.0, b + shift)) for a, b in chart.phrases]
+        else:
+            for n in chart.notes:
+                if n.part == part:
+                    n.t = max(0.0, n.t + shift)
+        say(f"{part}: your chart offset ({ms:+d} ms) applied")
 
 
 def write_preview(notes_mid: Path, out: Path, duration: float) -> dict[str, list[int]]:

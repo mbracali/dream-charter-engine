@@ -5,6 +5,7 @@ from pathlib import Path
 
 import mido
 import numpy as np
+import pytest
 import soundfile as sf
 import yaml
 
@@ -200,3 +201,23 @@ def test_a_whole_song_encodes_to_ogg(tmp_path):
     export_song.write_ogg(tmp_path / "long.ogg", np.stack([data, data], axis=1), sr)
     info = sf.info(str(tmp_path / "long.ogg"))
     assert info.format == "OGG" and abs(info.duration - 240) < 0.1
+
+
+def test_song_offset_pads_or_cuts_the_audio():
+    data = np.ones((1000, 2), dtype=np.float32)
+    assert export_song.offset_audio(data, 1000, 250).shape[0] == 1250       # audio later: silence first
+    assert export_song.offset_audio(data, 1000, 250)[:250].sum() == 0
+    assert export_song.offset_audio(data, 1000, -100).shape[0] == 900       # audio earlier: start cut
+    assert export_song.offset_audio(data, 1000, 0) is data
+
+
+def test_chart_offsets_survive_a_new_forge():
+    import forge
+
+    chart = sample_chart()
+    before = {part: sorted(n.t for n in chart.notes if n.part == part) for part in ("guitar", "bass", "drums")}
+    forge.apply_offsets(chart, {"guitar": 120, "bass": 0, "drums": -50, "vocals": 30})
+    for part, shift in (("guitar", 0.12), ("bass", 0.0), ("drums", -0.05)):
+        after = sorted(n.t for n in chart.notes if n.part == part)
+        assert after == pytest.approx([max(0.0, t + shift) for t in before[part]])
+    assert chart.vocals[0].t == pytest.approx(0.43) and chart.phrases[0][0] == pytest.approx(0.43)

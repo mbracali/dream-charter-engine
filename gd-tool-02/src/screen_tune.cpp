@@ -97,6 +97,7 @@ void App::undo() {
     undo_.pop_back();
     sel_ = -1;
     chartChanged();
+    syncOffsets();
     status_ = "Undone.";
 }
 
@@ -107,6 +108,7 @@ void App::redo() {
     redo_.pop_back();
     sel_ = -1;
     chartChanged();
+    syncOffsets();
     status_ = "Redone.";
 }
 
@@ -124,6 +126,7 @@ void App::revertChart() {
         return;
     }
     pushUndo();
+    forged.offsetMs = chart_.offsetMs;  // forged.txt has the offsets the forge applied
     chart_ = forged;
     sel_ = -1;
     chartChanged();
