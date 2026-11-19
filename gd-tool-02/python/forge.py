@@ -452,7 +452,30 @@ def build_chart(project: Path, notes_mid: Path, plan: Plan) -> chart_text.Chart:
         else:
             emit("STATUS", f"{file.name} has no {part} part")
     apply_offsets(chart, plan.offsets)
+    report_coverage(chart, plan)
     return chart
+
+
+def clock(seconds: float) -> str:
+    return f"{int(seconds) // 60}:{int(seconds) % 60:02d}"
+
+
+def report_coverage(chart: chart_text.Chart, plan: Plan) -> None:
+    """How much of the song each sheet-driven part covers: a partial tab is said out loud."""
+    if chart.duration <= 0:
+        return
+    for part in plan.refs:
+        if part not in SCORE_ONLY:
+            continue
+        times = [n.t for n in chart.part(part, 3)]
+        if not times:
+            continue
+        first, last = min(times), max(times)
+        share = (last - first) / chart.duration
+        line = f"{part}: notes from the sheet cover {clock(first)} to {clock(last)} of {clock(chart.duration)}"
+        if share < 0.6:
+            line += " (the sheet covers only part of the song)"
+        say(line)
 
 
 def apply_offsets(chart: chart_text.Chart, offsets: dict[str, int]) -> None:

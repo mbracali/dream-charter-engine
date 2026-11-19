@@ -34,6 +34,10 @@ a step bar at the top (`Cmd/Ctrl+1..4`):
        guitars and no such name, the Guitar box shows a **track picker** and FORGE waits for
        your pick. The file is lined up once for every box (copies are matched by content).
        Guitar Pro 3-5 needs `pyguitarpro` (in `python/requirements.txt`); 6-8 are read without.
+     - lining a sheet up: the engine uses the sheet's own tempo when it agrees with the
+       recording, judges the match only on the part the sheet covers, and pins a short sheet
+       (only the intro and first verse, say) to the start of the song when it fits there. The
+       forge says how much of the song each sheet covers ("0:16 to 1:16 of 4:46").
    - **Drums** come from the drums stem (ADTOF); a drum sheet is optional, and a drum text tab
      alone can't be lined up yet. **This song has no drums** leaves them out.
    - **Keys are never charted** (the keys stem is only audio, mixed into `song.ogg`).

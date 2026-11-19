@@ -485,7 +485,8 @@ void App::startNextJob() {
     if (job.kind == JobKind::Export) exported_.clear();
     jobFilled_.clear();
     jobChoose_.clear();
-    logEvent(std::string("job start ") + (job.kind == JobKind::Metadata ? "metadata" : job.kind == JobKind::Forge ? "forge" : "export") +
+    logEvent(std::string("job start ") + (job.kind == JobKind::Metadata ? "metadata" : job.kind == JobKind::Forge ? "forge"
+                                          : job.kind == JobKind::Inspect ? "read sheet" : "export") +
              ": " + p->id);
 }
 

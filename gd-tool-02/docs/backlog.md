@@ -46,6 +46,7 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | R35 | Remove the forge settings panel (Mixer and the not-forged screen); keep the defaults | ✅ | drawForgeSettings removed (Mixer and not-forged screen); defaults stay (steady drums / riffs, auto genre) |
 | R36 | Keys and "other" are never separate stems: always inside the rest of the mix | ✅ | separate_stems merges piano into other; old projects' keys.wav mixed into other in the player |
 | R37 | Guitar Pro 4 (.gp4) support, proven like GP5 | ✅ | every Guitar Pro test runs for .gp4 and .gp5; a real GP4 of Evil Papagali (2 guitars, bass, drums) filled all boxes, asked for the guitar, drove guitar / bass / drums |
+| R38 | A partial Guitar Pro tab (Lets Ride To Metal Land: 40 bars = 1:16 of a 4:46 song) charted nothing for guitar / bass | ✅ | Engine (reference.py): (1) the score's written tempo picks the speed when it agrees with the recording (alignment_factors); (2) the match is judged inside the stretch the score covers (_in_span); (3) a short score is tried pinned to where the sound starts and kept when it costs <= 15% more (the outro repeated the intro riff). Result: guitar 89%, bass 91%, drums 94%, Verse 1 at 39.3 s (tab author: 39.8 s). The forge now says how much of the song a sheet covers. Evil Papagali unchanged |
 
 ## Later
 
@@ -62,6 +63,7 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | L09 | Licence: MMS_FA (CC BY-NC 4.0) and ADTOF (CC BY-NC-SA) weights are non-commercial | ⏸️ | Decide with the project licence |
 | L10 | Windows / Android runs | ❌ | not tested; Windows python path is coded (`.venv/Scripts/python.exe`) |
 | L12 | Import Rock Band packages: CON (Xbox STFS) and `.rba`/`.mogg`, so RB3 customs from RhythmVerse can be dropped on Song home | ❌ | R15: the best Evil Papagali source is an RB3 custom |
+| L14 | A partial tab leaves the rest of the song without guitar / bass (rule R19): find a full tab, or offer audio charting for the uncovered part | ❌ | Lets Ride To Metal Land's GP4 covers 0:00-1:17 |
 | L13 | Drum-only references (a drum text tab, a drums-only MIDI) can't be aligned: the engine aligns scores by their pitched tracks | ❌ | Works when the drums come in a full score (Guitar Pro / MIDI) also used for guitar or bass. Needs onset-based alignment |
 | L11 | Old projects (before the rework) have `forge/preview.txt` only: they show as not forged until forged again | ⏸️ | forge again, or convert with `forge.py --preview-only` |
 

@@ -107,6 +107,7 @@ class Score:
     tracks: list[RefTrack]
     # compassos na ordem em que tocam (repetições desdobradas): (número na partitura, início, fim), em batidas
     bars: list[tuple[int, float, float]] = field(default_factory=list)
+    bpm: float | None = None   # andamento escrito na partitura (o primeiro), quando ela diz
 
     def bar_spans(self, first: int, last: int) -> list[tuple[float, float]]:
         """Os trechos (início, fim, em batidas) em que tocam os compassos first..last da partitura.
@@ -154,12 +155,80 @@ def read_score(path: Path) -> Score:
     path = Path(path)
     suffix = path.suffix.lower()
     if suffix in MIDI_EXTENSIONS:
-        return Score(path, *_read_midi(path))
+        return Score(path, *_read_midi(path), bpm=_score_bpm(path, suffix))
     if suffix in GP_EXTENSIONS:
-        return Score(path, *_read_guitar_pro(path))
+        return Score(path, *_read_guitar_pro(path), bpm=_score_bpm(path, suffix))
     if suffix in NEW_GP_EXTENSIONS:
-        return Score(path, *_read_new_guitar_pro(path))
+        return Score(path, *_read_new_guitar_pro(path), bpm=_score_bpm(path, suffix))
     raise ValueError(f"formato de partitura não reconhecido: {path.name} (use .mid, .gp3, .gp4, .gp5, .gpx ou .gp)")
+
+
+def _score_bpm(path: Path, suffix: str) -> float | None:
+    """O primeiro andamento escrito na partitura, ou None (o padrão de 120 do MIDI não conta)."""
+    try:
+        if suffix in MIDI_EXTENSIONS:
+            import mido
+
+            for track in mido.MidiFile(str(path)).tracks:
+                for msg in track:
+                    if msg.type == "set_tempo":
+                        return 60_000_000 / msg.tempo
+            return None
+        if suffix in GP_EXTENSIONS:
+            import guitarpro
+
+            return float(guitarpro.parse(str(path)).tempo) or None
+        data = path.read_bytes()   # .gp / .gpx: a automação Tempo do score.gpif
+        if data[:2] == b"PK":
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                name = next(n for n in archive.namelist() if n.lower().endswith("score.gpif"))
+                xml = archive.read(name)
+        else:
+            files = gpx_files(data)
+            xml = files[next(n for n in files if n.lower().endswith("score.gpif"))]
+        m = re.search(rb"<Type>Tempo</Type>.*?<Value>\s*([\d.]+)", xml, re.S)
+        return float(m.group(1)) if m else None
+    except Exception:   # andamento é só uma ajuda ao alinhamento: sem ele, testa os três fatores
+        return None
+
+
+def _in_span(span: tuple | None, tick: int) -> bool:
+    """Se o tick está no trecho da gravação que a partitura cobre (sem trecho: a música toda)."""
+    return span is None or span[0] <= tick <= span[1]
+
+
+START_PARTIAL = 0.8      # partitura com menos que 80% das batidas da gravação: é só um trecho
+START_TOLERANCE = 1.15   # e presa no começo do som, vale se custar até 15% a mais que a melhor
+
+
+def _first_sound_beat(y: np.ndarray, sr: int, grid: np.ndarray) -> float:
+    """A batida (fracionária) da grade em que o som começa (40 dB abaixo do pico)."""
+    hop = 512
+    frames = len(y) // hop
+    if frames < 2:
+        return 0.0
+    rms = np.sqrt(np.mean(y[: frames * hop].reshape(frames, hop) ** 2, axis=1))
+    loud = np.flatnonzero(rms > rms.max() * 10 ** (-40 / 20))
+    seconds = float(loud[0] * hop / sr) if loud.size else 0.0
+    return float(np.interp(seconds, grid, np.arange(len(grid))))
+
+
+TEMPO_AGREES = 1.15   # andamento da partitura e da gravação "conferem" dentro de 15%
+
+
+def alignment_factors(score_bpm: float | None, beat_times: np.ndarray) -> tuple[float, ...]:
+    """Fatores (batidas da gravação por batida da partitura) que o alinhamento testa.
+
+    Quando a partitura escreve o andamento e ele confere com o da gravação (ou com o dobro / a
+    metade), só esse fator é testado. Sem isso, uma partitura que cobre só um trecho da música
+    (introdução e primeiro verso, por exemplo) pode "custar menos" esticada na metade da
+    velocidade sobre a música inteira, e aí não confere com nada."""
+    if not score_bpm or len(beat_times) < 4:
+        return (1.0, 2.0, 0.5)
+    audio_bpm = 60.0 / float(np.median(np.diff(beat_times)))
+    ratio = audio_bpm / score_bpm
+    best = min((1.0, 2.0, 0.5), key=lambda f: abs(np.log(ratio / f)))
+    return (best,) if abs(np.log(ratio / best)) < np.log(TEMPO_AGREES) else (1.0, 2.0, 0.5)
 
 
 def _read_midi(path: Path) -> tuple[list[RefTrack], list[tuple[int, float, float]]]:
@@ -727,7 +796,7 @@ def align(score: Score, tracks: list[RefTrack], y: np.ndarray, sr: int, beat_tim
     grid = regular_grid(beat_times)
     audio = audio_chroma(y, sr, grid)
     best = None
-    for factor in (1.0, 2.0, 0.5):
+    for factor in alignment_factors(score.bpm, beat_times):
         step = 1 / factor   # passos de partitura por batida da gravação
         n_steps = int(np.ceil(score.length_beats / step)) + 1
         ref = score_chroma(pitched, step, n_steps)
@@ -739,7 +808,18 @@ def align(score: Score, tracks: list[RefTrack], y: np.ndarray, sr: int, beat_tim
                 best = (cost, factor, transpose, path, step)
     if best is None:
         raise ValueError("a partitura não se alinha com nenhum trecho da gravação")
+    # Partitura bem mais curta que a gravação (só a introdução e o primeiro verso, por exemplo):
+    # ela costuma começar no começo da música, mas o mesmo riff pode voltar no fim. Tenta também
+    # com o primeiro compasso preso no começo do som; se custa quase o mesmo, fica com ele.
     cost, factor, transpose, path, step = best
+    score_steps = int(np.ceil(score.length_beats / step))
+    if not anchors and score_steps < START_PARTIAL * len(grid):
+        start = _first_sound_beat(y, sr, grid)
+        ref = score_chroma(pitched, step, score_steps + 1)
+        at_start, at_cost = align_chroma(np.roll(ref, transpose, axis=0), audio, [(0.0, float(start))])
+        if len(at_start) and at_cost <= cost * START_TOLERANCE:
+            cost, path = at_cost, at_start
+    cost, factor, transpose, path, step = cost, factor, transpose, path, step
     steps, beats = path[:, 0], path[:, 1].astype(float)
     ref_beats = np.unique(steps)
     audio_beats = np.array([beats[steps == k].mean() for k in ref_beats])
@@ -965,8 +1045,11 @@ class Guide:
         ticks = np.array([e.tick for e in events])
         tolerance = MATCH_BEATS * self.resolution
         matches = [_nearest(events, ticks, c.tick, tolerance) for c in cands]
-        matched = sum(m is not None for m in matches)
-        share = matched / len(cands) if cands else 0.0
+        # Quanto confere, só no trecho que a partitura cobre: uma partitura de só um pedaço da
+        # música (a introdução e o primeiro verso) não pode ser julgada pelas notas do resto.
+        covered = [m for c, m in zip(cands, matches) if _in_span(self.span, c.tick)]
+        matched = sum(m is not None for m in covered)
+        share = matched / len(covered) if covered else 0.0
         label = f"    {self.instrument}" + (f" ({source})" if source else "")
         if share < MIN_MATCHED:
             log(f"{label}: a referência confere com só {share:.0%} das notas detectadas, ignorada")
@@ -1078,7 +1161,7 @@ class DrumGuide:
         from ai_charter.charting.drums import CYMBAL_FLAGS, HAND_PRIORITY, LANES
 
         ticks = np.array([e.tick for e in self.events])
-        expert = track.notes.get("expert", [])
+        expert = [n for n in track.notes.get("expert", []) if _in_span(self.span, n.tick)]   # no trecho da partitura
         matched = sum(self._nearest(n.tick, ticks) is not None for n in expert)
         share = matched / len(expert) if expert else 0.0
         if share < MIN_MATCHED:
