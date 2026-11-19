@@ -5,7 +5,8 @@
 Lists its tracks (cached in PROJECT/sheets/.tracks/<file name>.tsv for the window: index, guess,
 notes, drums, name; a "#default" line per box), then copies the file into every other box
 (guitar, bass, drums) it has an instrument for, so one file fills the whole band (R32).
-Prints STATUS / FILLED <boxes> / CHOOSE <box> (several guitars, no lead named) / DONE / ERROR.
+Prints STATUS / FILLED <boxes> / CHOOSE <box> (several guitars, no lead named) /
+LENGTH <seconds of music in the file, or -1 when it can't tell> / DONE / ERROR.
 """
 
 from __future__ import annotations
@@ -26,9 +27,11 @@ def inspect(project: Path, box: str, name: str) -> list[str]:
     if sheets.kind_of(source, box) not in ("tab", "score", "chart"):
         return []
     tracks = sheets.score_tracks(source)
+    seconds = sheets.music_seconds(source)
     cache = project / "sheets" / ".tracks"
     cache.mkdir(parents=True, exist_ok=True)
     lines = [f"{t['index']}\t{t['guess']}\t{t['notes']}\t{1 if t['drums'] else 0}\t{t['name']}" for t in tracks]
+    lines.append(f"#length\t{seconds if seconds else -1:.1f}")
     filled, unsure = [], []
     for instrument in sheets.INSTRUMENTS:
         index, sure = sheets.default_track(tracks, instrument)
@@ -45,6 +48,7 @@ def inspect(project: Path, box: str, name: str) -> list[str]:
     (cache / f"{name}.tsv").write_text("\n".join(lines) + "\n", encoding="utf-8")
     for t in tracks:
         emit("STATUS", f"{name}: track {t['index']} {t['name']} ({t['guess']}, {t['notes']} notes)")
+    emit("LENGTH", f"{seconds if seconds else -1:.1f}")
     if filled:
         emit("FILLED", ",".join(filled))
     for instrument in unsure:

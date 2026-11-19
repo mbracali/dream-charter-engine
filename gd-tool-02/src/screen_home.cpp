@@ -186,7 +186,10 @@ ScoreTracks App::scoreTracks(const Project& p, const std::string& file) const {
         std::istringstream ss(line);
         std::string cell;
         while (std::getline(ss, cell, '\t')) f.push_back(cell);
-        if (f.size() >= 4 && f[0] == "#default") {
+        if (f.size() >= 2 && f[0] == "#length") {
+            out.seconds = float(std::atof(f[1].c_str()));
+            out.hasLength = true;
+        } else if (f.size() >= 4 && f[0] == "#default") {
             out.defaults[f[1]] = {std::atoi(f[2].c_str()), f[3] == "1"};
         } else if (f.size() >= 5) {
             out.tracks.push_back({std::atoi(f[0].c_str()), std::atoi(f[2].c_str()), f[1], f[4], f[3] == "1"});
@@ -416,9 +419,57 @@ void App::forgeSong() {
     startForge();
 }
 
+// A Guitar Pro / MIDI sheet whose music is much shorter than the song (only the intro and a
+// verse, say) can't be lined up with it: say so once, in a popup (R39).
+void App::checkShortSheets(Project& p) {
+    if (overlay_ != Overlay::None) return;
+    const double song = std::atof(p.doc.get("audio", "duration_s").c_str());
+    if (song <= 0) return;
+    const std::string warned = "|" + p.doc.get("sheets", "short_warned") + "|";
+    for (const char* box : {"guitar", "bass", "drums"}) {
+        for (auto& f : sheetFiles(p, box)) {
+            if (f.kind != "tab" && f.kind != "score" && f.kind != "chart") continue;
+            if (warned.find("|" + f.name + "|") != std::string::npos) continue;
+            const ScoreTracks st = scoreTracks(p, f.name);
+            if (!st.hasLength || st.seconds <= 0 || st.seconds >= song * 0.7) continue;
+            const std::string list = p.doc.get("sheets", "short_warned");
+            setValue(p, "sheets", "short_warned", list.empty() ? f.name : list + "|" + f.name);
+            noticeTitle_ = "This sheet is shorter than the song";
+            noticeText_ = f.name + " has " + clockText(st.seconds) + " of music, but the song is " + clockText(song) +
+                          " long.\n\nIt probably covers only part of the song (the intro and a verse, say), so the "
+                          "forge most likely can't line it up with the recording, and won't chart from it.\n\n"
+                          "Look for a complete tab of the whole song and add it instead.";
+            overlay_ = Overlay::Notice;
+            logEvent("short sheet: " + f.name + " (" + std::to_string(int(st.seconds)) + " s of " + std::to_string(int(song)) + " s)");
+            return;
+        }
+    }
+}
+
+void App::drawNotice(float W, float H) {
+    const float pw = std::min(W - 80 * u_, 720 * u_), ph = 300 * u_;
+    SDL_FRect r = drawPanel(W, H, pw, ph, noticeTitle_);
+    float y = r.y;
+    std::istringstream paragraphs(noticeText_);
+    std::string para;
+    while (std::getline(paragraphs, para)) {
+        if (para.empty()) {
+            y += 10 * u_;
+            continue;
+        }
+        for (auto& l : wrap(para, size_t(r.w / (8 * 1.5f * u_)))) {
+            text(r.x, y, l, kCream, 1.5f * u_);
+            y += 20 * u_;
+        }
+    }
+    const float bw = buttonW("OK");
+    button(r.x + r.w - bw, r.y + r.h - 30 * u_, "OK", [this] { overlay_ = Overlay::None; }, true, true, 32 * u_);
+}
+
 // ---- drawing ----------------------------------------------------------------------------------
 
 void App::drawHome(Project& p, const SDL_FRect& r) {
+    checkShortSheets(p);
     // The song: cover, what was read from the file, details.
     const float coverS = 116 * u_;
     SDL_FRect cover{r.x, r.y, coverS, coverS};
@@ -541,9 +592,9 @@ void App::drawBox(Project& p, const BoxDef& def, const SDL_FRect& r) {
         bool unsure = false;
         if (f.kind == "tab" || f.kind == "score" || f.kind == "chart") {
             const ScoreTracks st = scoreTracks(p, f.name);
-            if (!st.known) {
+            if (!st.known || !st.hasLength) {
                 kl = "reading...";
-                if (!jobFor(p, JobKind::Inspect)) inspectSheet(p, box, f.name);  // added before R32
+                if (!jobFor(p, JobKind::Inspect)) inspectSheet(p, box, f.name);  // added before R32 / R39
             } else {
                 choices = trackChoices(st, box);
                 auto d = st.defaults.find(box);

@@ -96,6 +96,54 @@ def score_tracks(path: Path) -> list[dict]:
              "drums": t.drums} for t in read_score(path).tracks if t.notes]
 
 
+def written_bpm(path: Path) -> float | None:
+    """The first tempo written in a Guitar Pro / MIDI file (None when it says none)."""
+    ext = path.suffix.lower()
+    try:
+        if ext in MIDI_EXT:
+            import mido
+
+            for track in mido.MidiFile(str(path)).tracks:
+                for msg in track:
+                    if msg.type == "set_tempo":
+                        return 60_000_000 / msg.tempo
+            return None
+        if ext in (".gp3", ".gp4", ".gp5"):
+            import guitarpro
+
+            return float(guitarpro.parse(str(path)).tempo) or None
+        import io
+        import zipfile
+
+        from ai_charter.reference import gpx_files
+
+        data = path.read_bytes()
+        if data[:2] == b"PK":
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                xml = archive.read(next(n for n in archive.namelist() if n.lower().endswith("score.gpif")))
+        else:
+            files = gpx_files(data)
+            xml = files[next(n for n in files if n.lower().endswith("score.gpif"))]
+        m = re.search(rb"<Type>Tempo</Type>.*?<Value>\s*([\d.]+)", xml, re.S)
+        return float(m.group(1)) if m else None
+    except Exception:  # noqa: BLE001 - no tempo: no length check
+        return None
+
+
+def music_seconds(path: Path) -> float | None:
+    """How long a sheet's music lasts: a score's beats at its own written tempo, or a chart's
+    last note. None when it can't tell (no tempo written)."""
+    if kind_of(path, "guitar") == "chart":
+        chart = read_chart_file(path) if path.suffix.lower() == ".chart" else midi_to_chart(path)
+        return max([n.t + n.sustain for n in chart.notes] + [0.0]) or None
+    bpm = written_bpm(path)
+    if not bpm:
+        return None
+    from ai_charter.reference import read_score
+
+    return read_score(path).length_beats * 60.0 / bpm
+
+
 def candidates(tracks: list[dict], instrument: str) -> list[dict]:
     """The tracks that can play `instrument`, busiest first."""
     out = [t for t in tracks if (t["drums"] if instrument == "drums" else (t["guess"] == instrument and not t["drums"]))]

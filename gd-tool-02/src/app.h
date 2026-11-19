@@ -92,7 +92,7 @@ struct Menu {
 enum class Screen { Home, Forge, Tune, Export };
 enum class JobKind { Metadata, Forge, Export, Inspect };
 enum class DialogKind { Song, ProjectsDir, CloneHeroDir, YargDir, Sheet };
-enum class Overlay { None, Details, Lyrics, Paste, Help, About };
+enum class Overlay { None, Details, Lyrics, Paste, Notice, Help, About };
 enum class Focus { None, Field, Editor, VocalLyric };
 enum class Icon { Play, Pause, Start, Back, Forward };
 
@@ -135,6 +135,8 @@ struct ScoreTrack {
 };
 struct ScoreTracks {
     bool known = false;  // the cache exists (the file was read)
+    float seconds = -1;  // how long the music in the file lasts (-1: it can't tell)
+    bool hasLength = false;  // the cache has that line (older caches don't)
     std::vector<ScoreTrack> tracks;
     std::map<std::string, std::pair<int, bool>> defaults;  // box -> (track, sure)
 };
@@ -286,6 +288,9 @@ public:
     std::vector<ScoreTrack> trackChoices(const ScoreTracks& st, const std::string& box) const;
     int chosenTrack(const Project& p, const std::string& box, const std::string& file) const;  // -1: none
     void inspectSheet(Project& p, const std::string& box, const std::string& name);
+    void checkShortSheets(Project& p);  // a sheet much shorter than the song: a popup, once per file
+    void drawNotice(float W, float H);
+    std::string noticeTitle_, noticeText_;
     void forgeSong();
 
     // ---- Song forge (screen_forge.cpp) ----------------------------------------------------

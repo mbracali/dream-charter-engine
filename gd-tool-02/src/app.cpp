@@ -1048,6 +1048,10 @@ void App::onKey(SDL_Keycode key, SDL_Keymod mod) {
         }
         return;
     }
+    if (overlay_ == Overlay::Notice) {  // any of Enter / Esc / Space closes the popup
+        if (key == SDLK_ESCAPE || key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE) overlay_ = Overlay::None;
+        return;
+    }
     if (overlay_ == Overlay::Details || overlay_ == Overlay::Lyrics || overlay_ == Overlay::Paste) {
         if (key == SDLK_ESCAPE) {
             if (Project* p = currentProject()) saveProject(*p);
@@ -1394,6 +1398,7 @@ void App::draw() {
     if (overlay_ == Overlay::Details) drawDetails(W, H);
     if (overlay_ == Overlay::Lyrics) drawLyricsEditor(W, H);
     if (overlay_ == Overlay::Paste) drawPasteEditor(W, H);
+    if (overlay_ == Overlay::Notice) drawNotice(W, H);
     drawMenuBar({0, 0, W, menuH});
     if (overlay_ == Overlay::Help) drawHelp(W, H);
     if (overlay_ == Overlay::About) drawAbout(W, H);

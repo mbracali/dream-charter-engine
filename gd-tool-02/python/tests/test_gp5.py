@@ -112,3 +112,14 @@ def test_the_solo_guitar_wins_and_unclear_guitars_ask(tmp_path, fmt):
     other = next(t["index"] for t in tracks if t["index"] != index and t["guess"] == "guitar")
     assert sheets.pick_tracks(unclear, "guitar", chosen=other) == {other: "guitar"}  # the user's pick wins
     assert sheets.chosen_track({"sheets": {"guitar_track": f"unclear.{fmt}#{other}"}}, "guitar", f"unclear.{fmt}") == other
+
+
+def test_the_cache_knows_how_long_the_music_lasts(tmp_path, fmt):
+    import inspect_sheet
+
+    (tmp_path / "sheets" / "guitar").mkdir(parents=True)
+    write_gp5(tmp_path / "sheets" / "guitar" / f"short.{fmt}", [(b, 52) for b in range(0, 64)], bpm=120)  # 16 bars
+    inspect_sheet.inspect(tmp_path, "guitar", f"short.{fmt}")
+    cache = (tmp_path / "sheets" / ".tracks" / f"short.{fmt}.tsv").read_text()
+    seconds = float(next(l.split("\t")[1] for l in cache.splitlines() if l.startswith("#length")))
+    assert seconds == pytest.approx(64 * 0.5, abs=1.0)   # 64 beats at 120 BPM: 32 s
