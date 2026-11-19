@@ -55,6 +55,7 @@ NEW_GP_EXTENSIONS = (".gpx", ".gp", ".gp6", ".gp7", ".gp8")
 INSTRUMENTS = ("guitar", "bass", "keys", "drums", "vocals")
 PITCHED = ("guitar", "bass", "keys")
 GUIDED = (*PITCHED, "drums")              # instrumentos que a referência guia (por enquanto)
+HEARD_PIECES = ("kick", "snare", "tom_high", "tom_mid", "tom_low")   # o que a gravação pode somar à partitura
 DRUM_MATCH_BEATS = 0.125                  # bateria: golpes mais densos, tolerância menor (fusa)
 MATCH_BEATS = 0.25                        # distância máxima entre a nota detectada e a da partitura
 MIN_MATCHED = 0.3                         # abaixo disso a referência não confere: é ignorada
@@ -643,13 +644,41 @@ class Alignment:
     transpose: int            # semitons a somar à partitura para soar como a gravação
     factor: float             # batidas da gravação por batida da partitura (0.5, 1 ou 2)
     cost: float               # distância média no caminho (0 = igual, 1 = nada a ver)
+    audio_last: float = float("inf")   # a última batida da gravação (depois dela, None)
 
     def to_audio_beat(self, beat: float) -> float | None:
-        """Batida da gravação para uma batida da partitura (None fora do trecho alinhado)."""
+        """Batida da gravação para uma batida da partitura (None fora do trecho alinhado e fora
+        da gravação)."""
         if beat < self.ref_beats[0] - 0.5 or beat > self.ref_beats[-1] + 1.5:
             return None
-        return float(np.interp(beat, self.ref_beats, self.audio_beats,
-                               right=self.audio_beats[-1] + (beat - self.ref_beats[-1]) * self.factor))
+        at = float(np.interp(beat, self.ref_beats, self.audio_beats,
+                             right=self.audio_beats[-1] + (beat - self.ref_beats[-1]) * self.factor))
+        return at if -0.5 <= at <= self.audio_last + 0.5 else None
+
+
+STALL_SLOPE = 0.5      # alinhamento: nas pontas, a gravação andando menos que isso por batida da partitura...
+STALL_MIN_BEATS = 2    # ...por pelo menos tantas batidas é a partitura sobrando (antes ou depois da gravação)
+STALL_MAX_BEATS = 64
+
+
+def straighten_ends(ref: np.ndarray, audio: np.ndarray, factor: float) -> np.ndarray:
+    """A partitura que começa antes ou termina depois da gravação (contagem, um final mais longo):
+    o caminho do alinhamento empilha esses compassos na primeira / última batida da gravação, e
+    as notas deles caíam todas juntas. Ali o caminho vira uma reta no andamento da partitura; o
+    que cai fora da gravação é descartado (to_audio_beat)."""
+    audio = audio.copy()
+    n = len(ref)
+    tail = [i for i in range(n - 1) if STALL_MIN_BEATS <= ref[-1] - ref[i] <= STALL_MAX_BEATS
+            and audio[-1] - audio[i] < STALL_SLOPE * factor * (ref[-1] - ref[i])]
+    if tail:
+        k = tail[0]
+        audio[k:] = audio[k] + (ref[k:] - ref[k]) * factor
+    head = [i for i in range(1, n) if STALL_MIN_BEATS <= ref[i] - ref[0] <= STALL_MAX_BEATS
+            and audio[i] - audio[0] < STALL_SLOPE * factor * (ref[i] - ref[0])]
+    if head:
+        k = head[-1]
+        audio[:k] = audio[k] - (ref[k] - ref[:k]) * factor
+    return audio
 
 
 def score_chroma(tracks: list[RefTrack], step: float, n_steps: int) -> np.ndarray:
@@ -782,7 +811,9 @@ def align(score: Score, tracks: list[RefTrack], y: np.ndarray, sr: int, beat_tim
     audio_beats = np.interp(np.interp(audio_beats, np.arange(len(grid)), grid),
                             beat_times, np.arange(len(beat_times)))
     audio_beats = np.maximum.accumulate(audio_beats)
-    return Alignment(ref_beats * step, audio_beats, transpose if transpose <= 6 else transpose - 12, factor, cost)
+    audio_beats = straighten_ends(ref_beats * step, audio_beats, factor)
+    return Alignment(ref_beats * step, audio_beats, transpose if transpose <= 6 else transpose - 12, factor, cost,
+                     audio_last=float(len(beat_times) - 1))
 
 
 # ---------------------------------------------------------------------------
@@ -1054,8 +1085,9 @@ class Guide:
 
 
 # Bateria: peça de cada nota do mapa General MIDI (canal 10).
+# 44 (chimbal no pedal) fica de fora: é o pé, não uma peça que se toca na chart (como nas oficiais).
 GM_DRUMS = {35: "kick", 36: "kick", 37: "snare", 38: "snare", 39: "snare", 40: "snare",
-            42: "hihat", 44: "hihat", 46: "hihat", 49: "crash", 52: "crash", 55: "crash", 57: "crash",
+            42: "hihat", 46: "hihat", 49: "crash", 52: "crash", 55: "crash", 57: "crash",
             51: "ride", 53: "ride", 59: "ride", 41: "tom_low", 43: "tom_low", 45: "tom_mid", 47: "tom_mid",
             48: "tom_high", 50: "tom_high"}
 
@@ -1100,6 +1132,8 @@ class DrumGuide:
     fidelity: str = "corrigir"
     rules: object = None              # Rules (para remontar a pista)
     span: tuple | None = None   # (tick inicial, tick final) da partitura inteira na gravação (todas as pistas)
+    add_heard: bool = False     # completar / seguir: soma os golpes que a transcrição ouviu onde a partitura
+                                # não tem nada (viradas e notas fantasma que o autor da tablatura deixou de fora)
     stats: dict = field(default_factory=dict)
 
     def _nearest(self, tick: int, ticks: np.ndarray) -> DrumEvent | None:
@@ -1108,6 +1142,14 @@ class DrumGuide:
         i = int(np.searchsorted(ticks, tick))
         best = min((j for j in (i - 1, i) if 0 <= j < len(ticks)), key=lambda j: abs(ticks[j] - tick))
         return self.events[best] if abs(ticks[best] - tick) <= DRUM_MATCH_BEATS * self.resolution else None
+
+    @staticmethod
+    def _nearest_tick(tick: int, ticks: np.ndarray) -> float:
+        """Distância (ticks) até o golpe da partitura mais próximo."""
+        if not len(ticks):
+            return float("inf")
+        i = int(np.searchsorted(ticks, tick))
+        return float(min(abs(ticks[j] - tick) for j in (i - 1, i) if 0 <= j < len(ticks)))
 
     def __call__(self, track, log=print, sp_windows=None):
         from ai_charter.charting.drums import CYMBAL_FLAGS, HAND_PRIORITY, LANES
@@ -1185,7 +1227,8 @@ class DrumGuide:
             b = note.tick // bar
             matched_in[b] = matched_in.get(b, 0) + (self._nearest(note.tick, ticks) is not None)
         first, last = _score_bars(self.span, self.events, bar)
-        cands, replaced = [], 0
+        cands, replaced, heard = [], 0, 0
+        window = DRUM_MATCH_BEATS * self.resolution
         for b in sorted(set(detected) | set(from_score)):
             found, score = detected.get(b, []), from_score.get(b, [])
             if self.fidelity == "seguir":
@@ -1195,15 +1238,21 @@ class DrumGuide:
             if use_score:
                 cands += [Candidate(e.tick, 1.0, piece=p) for e in score for p in sorted(e.pieces)]
                 replaced += bool(score)
+                if self.add_heard:   # pratos não: o chimbal que só a transcrição ouve é o pedal (o pé)
+                    for n in found:
+                        added = [p for p in pieces_of(n) if p in HEARD_PIECES]
+                        if added and self._nearest_tick(n.tick, ticks) > window:
+                            cands += [Candidate(n.tick, 0.5, piece=p) for p in added]
+                            heard += 1
             else:
                 cands += [Candidate(n.tick, 1.0, piece=p) for n in found for p in pieces_of(n)]
         cands.sort(key=lambda c: c.tick)
         rebuilt = build_drum_track(cands, self.rules.drums, self.resolution, sp_windows,
                                    self.rules.general.drum_fill_every_measures)
         log(f"    drums: referência confere com {share:.0%} das batidas; {replaced} compasso(s) com os golpes "
-            f"da partitura ({self.fidelity})")
+            f"da partitura ({self.fidelity})" + (f"; {heard} golpe(s) ouvidos na gravação somados" if self.add_heard else ""))
         self.stats = {"matched": matched, "notes": len(expert), "changed": 0, "applied": True,
-                      "bars_from_score": replaced}
+                      "bars_from_score": replaced, "heard_added": heard}
         return rebuilt
 
 

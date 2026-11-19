@@ -144,10 +144,12 @@ class ScoreOnly:
 
 
 def install_references(refs: dict[str, Path], fidelity_of: dict[str, str] | None = None,
-                       chosen: dict[str, int] | None = None) -> None:
+                       chosen: dict[str, int] | None = None, drums_heard: bool = True) -> None:
     """The engine takes one score with a track -> instrument map. Song home gives one file
     per instrument, so its load_guides is replaced by one that loads each file for its own
-    instrument and merges the guides. `fidelity`: per instrument (text tabs: "corrigir")."""
+    instrument and merges the guides. `fidelity`: per instrument (text tabs: "corrigir").
+    `drums_heard` (R42): a drum sheet keeps all its hits, and the hits the transcription hears
+    where the sheet has none (fills, ghost notes the tab left out) are added."""
     import ai_charter.reference as reference
 
     original = reference.load_guides
@@ -184,6 +186,8 @@ def install_references(refs: dict[str, Path], fidelity_of: dict[str, str] | None
             for instrument in instruments:
                 if instrument in found:
                     guide = found[instrument]
+                    if instrument == "drums" and hasattr(guide, "add_heard"):
+                        guide.add_heard = drums_heard
                     guides[instrument] = ScoreOnly(guide) if instrument in SCORE_ONLY else guide
                     GUIDED_PARTS.add(instrument)
                     say(f"{file.name} drives the {instrument}")
@@ -328,6 +332,8 @@ class Plan:
             elif not has_sheet:
                 raise ValueError(f"the {part} needs a sheet (a tab, MIDI, chart or chord sheet), "
                                  f"or tick \"This song has no {part}\" on Song home")
+        # R42: hits heard in the recording are added to a drum sheet's, unless the user says no.
+        self.drums_heard = str(sheets_doc.get("drums_heard") or "") != "no"
         if str(sheets_doc.get("drums_absent") or "") == "yes":  # R24: drums need no sheet, but can be absent
             parts.remove("drums")
             self.charts.pop("drums", None)
@@ -391,7 +397,7 @@ def run_engine(project: Path, plan: Plan, progress: Progress) -> Path:
     block_downloads()
     patch_engine_audio()
     if plan.refs:
-        install_references(plan.refs, plan.fidelity, plan.tracks)
+        install_references(plan.refs, plan.fidelity, plan.tracks, plan.drums_heard)
     from ai_charter.pipeline import Options, run
 
     doc = yaml.safe_load((project / "project.yaml").read_text(encoding="utf-8")) or {}

@@ -668,6 +668,17 @@ void App::drawBox(Project& p, const BoxDef& def, const SDL_FRect& r) {
         hit({cb.x - 4 * u_, cb.y - 4 * u_, lw + 8 * u_, 24 * u_}, [this, box, absent](float, float) {
             if (Project* q = currentProject()) setValue(*q, "sheets", box + "_absent", absent ? "" : "yes");
         });
+        // R42: a drum sheet's hits plus the ones heard in the recording (on unless unticked).
+        if (box == "drums" && !absent && hasSheet(p, box)) {
+            const bool heard = p.doc.get("sheets", "drums_heard") != "no";
+            const std::string hl = "Add hits from audio";
+            SDL_FRect hb{cb.x + lw + 20 * u_, cb.y, 16 * u_, 16 * u_};
+            checkbox(hb, heard);
+            text(hb.x + 24 * u_, footY + 7 * u_, hl, heard ? kCream : kDim, 1.25f * u_, r.x + r.w - hb.x - 40 * u_);
+            hit({hb.x - 4 * u_, hb.y - 4 * u_, textW(hl, 1.25f * u_) + 36 * u_, 24 * u_}, [this, heard](float, float) {
+                if (Project* q = currentProject()) setValue(*q, "sheets", "drums_heard", heard ? "no" : "");
+            });
+        }
     }
 }
 

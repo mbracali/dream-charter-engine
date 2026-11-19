@@ -36,7 +36,7 @@ std::string App::forgeSignature(const Project& p) const {
     std::string sig = "genre=" + p.doc.get("forge", "genre") + ";drums=" + drumStyle(p) + ";riffs=" + riffStyle(p) +
                       ";guitar=" + sourceOf(p, "guitar") + ";bass=" + sourceOf(p, "bass") +
                       ";lyrics=" + lyricsChoice(p) + ";absent=" + p.doc.get("sheets", "guitar_absent") + p.doc.get("sheets", "bass_absent") +
-                      p.doc.get("sheets", "drums_absent");
+                      p.doc.get("sheets", "drums_absent") + ";heard=" + (p.doc.get("sheets", "drums_heard") == "no" ? "no" : "yes");
     for (const char* box : {"guitar", "bass", "drums"}) {
         sig += std::string(";") + box + ":";
         for (auto& f : sheetFiles(p, box))
