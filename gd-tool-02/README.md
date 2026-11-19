@@ -27,9 +27,10 @@ a step bar at the top (`Cmd/Ctrl+1..4`):
    - **Chart keys too** adds a keys part (Full band export only). **FORGE SONG** goes on.
 2. **Song forge** (`python/forge.py`): separates the stems if needed (Demucs, offline),
    then charts every part with dream-charter-engine (`ai_charter`) and the sheets. The
-   record spins with a progress bar. Then: the stems mixer (mute / solo / waveforms), the
-   charts on a Guitar Hero-style highway (part, Easy..Expert, song overview), and the forge
-   settings:
+   record spins with a progress bar. Then the **Band** view: the vocals across the top and
+   every instrument's highway side by side (guitar, bass, drums, keys), all on one playhead,
+   Easy..Expert. **Mixer** shows the stems mixer (mute / solo / waveforms) and the forge
+   settings beside it; **One part** shows a single big highway instead. The settings:
    - **Rules**: the engine's genre presets (`ai_charter/genres/`);
    - **Drums**: Heard 0.9 / **Steady** 0.8 / Locked 0.7 (engine `repeat_similarity`: bars at
      least this alike get the same notes);
@@ -113,7 +114,7 @@ scripts/linux_test.sh                       # Linux (Fedora container, podman or
 
 Debug flags (screenshots): `--settings FILE`, `--screenshot FILE.bmp`, `--screen 0-3`,
 `--part NAME`, `--seek S`, `--menu N`, `--hover X Y`, `--overlay details|lyrics|help`,
-`--forge`, `--wait-jobs`, `--simple`.
+`--forge`, `--wait-jobs`, `--simple`, `--one-part`, `--panels`, `--selftest`.
 
 ## Models (fully offline)
 

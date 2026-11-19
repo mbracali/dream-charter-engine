@@ -127,7 +127,9 @@ bool App::init(int argc, char** argv) {
         else if (a == "--seek" && i + 1 < argc) seekTo_ = std::atof(argv[++i]);
         else if (a == "--part" && i + 1 < argc) previewPart_ = tunePart_ = argv[++i];
         else if (a == "--forge") forgeAtStart_ = true;
-        else if (a == "--selftest") selfTest_ = true;  // test the editor on the first project, then quit
+        else if (a == "--selftest") selfTest_ = true;
+        else if (a == "--one-part") bandView_ = false;  // Song forge: the single-part view
+        else if (a == "--panels") showPanels_ = true;   // Song forge: band view with the mixer and settings  // test the editor on the first project, then quit
         else if (a == "--overlay" && i + 1 < argc) overlayAtStart_ = argv[++i];  // details / lyrics / help
         else paths.push_back(a);
     }

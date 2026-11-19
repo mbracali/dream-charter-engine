@@ -132,11 +132,25 @@ void App::drawForgeScreen(Project& p, const SDL_FRect& r) {
     if (chartFor_ != p.id) loadChart(p);
     if (stemsFor_ != p.id) loadStems(p);
 
-    // Toolbar: transport | Next.
-    transport(r.x, r.y);
+    // Toolbar: transport | Band / One part, Mixer & settings | Next.
+    float tx = r.x + transport(r.x, r.y) + 24 * u_;
+    tx += segmented(tx, r.y, {"Band", "One part"}, bandView_ ? 0 : 1, [this](int i) {
+              bandView_ = i == 0;
+              if (bandView_ && listenPart_) {
+                  listenPart_ = false;
+                  player_.setAllMuted(false, true);
+              }
+          }) + 12 * u_;
     const std::string next = "Next: Fine tuning  >";
+    if (bandView_ && tx + buttonW("Mixer") < r.x + r.w - buttonW(next) - 12 * u_)
+        button(tx, r.y, "Mixer", [this] { showPanels_ = !showPanels_; }, true, showPanels_, 34 * u_);
     button(r.x + r.w - buttonW(next), r.y, next, [this] { setScreen(Screen::Tune); }, true, true, 34 * u_);
     const float top = r.y + 50 * u_;
+    if (bandView_ && !showPanels_) {  // the band gets the whole width
+        drawPreview(p, {r.x, top, r.w, r.y + r.h - top});
+        drawDropdown();
+        return;
+    }
     const float leftW = std::min(440 * u_, r.w * 0.36f);
     const float mixH = std::min(r.h * 0.5f, 60 * u_ + float(player_.stems().size()) * 44 * u_);
     drawMixer({r.x, top, leftW, mixH});
@@ -293,12 +307,14 @@ void App::drawForgeSettings(Project& p, const SDL_FRect& r) {
     }
     if (!p.forged()) return;
     if (y + 30 * u_ > r.y + r.h) return;
-    label("Listen");
-    segmented(cx, y, {"Full mix", "This part"}, listenPart_ ? 1 : 0, [this](int i) {
-        listenPart_ = i == 1;
-        if (!listenPart_) player_.setAllMuted(false, true);
-    }, 30 * u_);
-    y += 46 * u_;
+    if (!bandView_) {  // "this part" is the one-part view's
+        label("Listen");
+        segmented(cx, y, {"Full mix", "This part"}, listenPart_ ? 1 : 0, [this](int i) {
+            listenPart_ = i == 1;
+            if (!listenPart_) player_.setAllMuted(false, true);
+        }, 30 * u_);
+        y += 46 * u_;
+    }
     if (y + 34 * u_ > r.y + r.h) return;
     const bool changed = p.doc.get("forge", "forged_with") != forgeSignature(p);
     button(lx, y, "Forge again", [this] { forgeSong(); }, !busy(p), changed, 32 * u_);
@@ -310,6 +326,18 @@ void App::drawPreview(Project& p, const SDL_FRect& r) {
     (void)p;
     fill(r, kPanel);
     auto parts = chartParts();
+    if (bandView_) {
+        text(r.x + 14 * u_, r.y + 20 * u_, "THE BAND", kSand, 1.75f * u_);
+        const std::vector<std::string> diffs = {"Easy", "Medium", "Hard", "Expert"};
+        segmented(r.x + r.w - 12 * u_ - segmentedW(diffs), r.y + 10 * u_, diffs, previewDiff_, [this](int i) { previewDiff_ = i; });
+        const float overviewH = 30 * u_;
+        SDL_FRect area{r.x, r.y + 54 * u_, r.w, r.h - 54 * u_ - overviewH - 22 * u_};
+        boardRect_ = area;
+        drawBandView(area);
+        const std::string first = parts.empty() || parts[0] == "vocals" ? "guitar" : parts[0];
+        drawOverview({r.x + 12 * u_, r.y + r.h - overviewH - 10 * u_, r.w - 24 * u_, overviewH}, partNotes(first, previewDiff_), false, first);
+        return;
+    }
     if (!parts.empty() && std::find(parts.begin(), parts.end(), previewPart_) == parts.end()) previewPart_ = parts[0];
     const bool vocals = previewPart_ == "vocals";
     const float tabsW = partTabs(r.x + 12 * u_, r.y + 10 * u_, parts, previewPart_);
@@ -342,5 +370,42 @@ void App::drawPreview(Project& p, const SDL_FRect& r) {
     if (parts.empty()) {
         const std::string a = "The forge made no charts. Check the stems and forge again.";
         text(r.x + (r.w - textW(a, 1.5f * u_)) / 2, r.y + r.h / 2, a, kSand, 1.5f * u_);
+    }
+}
+
+// Every part at once, like a Rock Band screen: the vocals across the top, then one highway
+// per charted part (guitar, bass, drums, keys) side by side, all on the same playhead.
+void App::drawBandView(const SDL_FRect& r) {
+    const float now = float(player_.playhead());
+    std::vector<std::string> lanes;
+    for (const char* p : {"guitar", "bass", "drums", "keys"})
+        if (chart_.hasPart(p)) lanes.push_back(p);
+    float y = r.y;
+    if (!chart_.vocals.empty()) {
+        const float vh = std::min(r.h * 0.26f, 190 * u_);
+        SDL_FRect strip{r.x + 8 * u_, y, r.w - 16 * u_, vh};
+        fill(strip, {0x13, 0x11, 0x15, 255});
+        fill({strip.x, strip.y, 3 * u_, 22 * u_}, stemColor("vocals"));
+        text(strip.x + 10 * u_, strip.y + 6 * u_, "Vocals  " + std::to_string(chart_.vocals.size()) + " syllables", kSand, 1.25f * u_);
+        drawVocalBoard({strip.x, strip.y + 14 * u_, strip.w, strip.h - 14 * u_}, now);
+        y += vh + 8 * u_;
+    }
+    if (lanes.empty()) {
+        const std::string a = "No instrument charts. Forge again.";
+        text(r.x + (r.w - textW(a, 1.5f * u_)) / 2, y + (r.y + r.h - y) / 2, a, kSand, 1.5f * u_);
+        return;
+    }
+    const float gap = 10 * u_, w = (r.w - gap * float(lanes.size() + 1)) / float(lanes.size());
+    for (size_t i = 0; i < lanes.size(); ++i) {
+        const std::string& part = lanes[i];
+        const float x = r.x + gap + float(i) * (w + gap);
+        std::string label = part;
+        label[0] = char(std::toupper(label[0]));
+        const int n = chart_.count(part, previewDiff_);
+        const std::string count = n < 0 ? "-" : std::to_string(n) + " notes";
+        fill({x, y, 3 * u_, 22 * u_}, stemColor(part));
+        text(x + 10 * u_, y + 6 * u_, label, kCream, 1.5f * u_, w - 20 * u_);
+        text(x + w - textW(count, 1.25f * u_) - 4 * u_, y + 8 * u_, count, kDim, 1.25f * u_);
+        drawHighway({x, y + 26 * u_, w, r.y + r.h - y - 26 * u_}, partNotes(part, previewDiff_), part == "drums", now);
     }
 }

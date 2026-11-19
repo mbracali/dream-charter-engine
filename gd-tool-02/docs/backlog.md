@@ -22,6 +22,8 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | R11 | Export song: Clone Hero and YARG, targets GH1 / GH2-GH3-Aerosmith / Full band, OGG stems | ✅ | Clone Hero and YARG folders are the same layout; not yet loaded in the games themselves (L08) |
 | R12 | Export to the Additive menu folder (gd-tool-01) | ⏸️ | Disabled in v1: gd-tool-01 has no format yet |
 | R13 | Linux build + tests (podman, Fedora) | ✅ | `scripts/linux_test.sh` |
+| R14 | Band view: guitar, bass, drums (+ keys) highways and the vocals at the same time | ✅ | Song forge default; Mixer toggles the side panels; One part = old single view |
+| R15 | Evil Papagali: find online resources (tabs, chords, lyrics, charts) to make its song better | 🟡 | Research done: [research/evil_papagali.md](research/evil_papagali.md). Best: a human RB3 chart on RhythmVerse; needs a browser download (+ L12) |
 
 ## Later
 
@@ -37,6 +39,7 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | L08 | Load an export in Clone Hero and YARG on a real install and play it | ❌ | needs the games installed; notes.mid round-trips to chart.txt exactly |
 | L09 | Licence: MMS_FA (CC BY-NC 4.0) and ADTOF (CC BY-NC-SA) weights are non-commercial | ⏸️ | Decide with the project licence |
 | L10 | Windows / Android runs | ❌ | not tested; Windows python path is coded (`.venv/Scripts/python.exe`) |
+| L12 | Import Rock Band packages: CON (Xbox STFS) and `.rba`/`.mogg`, so RB3 customs from RhythmVerse can be dropped on Song home | ❌ | R15: the best Evil Papagali source is an RB3 custom |
 | L11 | Old projects (before the rework) have `forge/preview.txt` only: they show as not forged until forged again | ⏸️ | forge again, or convert with `forge.py --preview-only` |
 
 ## Bugs found in the rework (fixed)

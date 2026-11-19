@@ -272,6 +272,7 @@ public:
     void drawMixer(const SDL_FRect& r);
     void drawForgeSettings(Project& p, const SDL_FRect& r);
     void drawPreview(Project& p, const SDL_FRect& r);
+    void drawBandView(const SDL_FRect& r);
     float partTabs(float x, float y, const std::vector<std::string>& parts, std::string& selected);
     std::vector<std::string> chartParts() const;
     const std::vector<std::pair<std::string, std::string>>& genres();
@@ -358,6 +359,8 @@ public:
     std::string previewPart_ = "guitar";
     int previewDiff_ = 3;  // Expert
     bool listenPart_ = false;
+    bool bandView_ = true;     // Song forge: every part at once (else one big highway)
+    bool showPanels_ = false;  // Song forge, band view: the mixer and settings beside it
 
     std::string tunePart_ = "guitar";
     int tuneDiff_ = 3;
