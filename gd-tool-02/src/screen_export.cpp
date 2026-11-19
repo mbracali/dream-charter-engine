@@ -17,7 +17,7 @@ struct TargetDef {
 const TargetDef kTargets[] = {
     {"gh1", "Guitar Hero 1", "Guitar only (GH1 setlist)", {"guitar"}},
     {"gh2", "GH2 / GH3 / Aerosmith", "Guitar + bass (co-op)", {"guitar", "bass"}},
-    {"full", "Full band", "Every part (GH4+, RB, YARG)", {"guitar", "bass", "drums", "vocals", "keys"}},
+    {"full", "Full band", "Every part (GH4+, RB, YARG)", {"guitar", "bass", "drums", "vocals"}},
 };
 
 }  // namespace
@@ -70,7 +70,6 @@ void App::drawExport(Project& p, const SDL_FRect& r) {
         std::vector<std::string> stems;
         for (auto& part : t.parts) {
             const bool has = part == "vocals" ? !chart_.vocals.empty() : chart_.hasPart(part);
-            if (part == "keys" && !has) continue;  // keys only when charted
             const SDL_Color c = stemColor(part);
             shape::ellipse(renderer_, card.x + 52 * u_, ly + 6 * u_, 5 * u_, 5 * u_, shape::fcolor(c, has ? 1 : 0.3f));
             std::string label = part;

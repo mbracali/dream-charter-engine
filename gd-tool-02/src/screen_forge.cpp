@@ -14,7 +14,7 @@ const char* const kSources[] = {"guitar", "bass", "keys", "vocals", "other"};
 
 std::vector<std::string> App::chartParts() const {
     std::vector<std::string> out;
-    for (const char* p : {"guitar", "bass", "drums", "keys"})
+    for (const char* p : {"guitar", "bass", "drums"})  // never keys (R25)
         if (chart_.hasPart(p)) out.push_back(p);
     out.push_back("vocals");  // always (R23), even with no syllables
     return out;
@@ -35,8 +35,9 @@ std::string App::sourceOf(const Project& p, const std::string& part) const {
 // Everything the charts depend on, to tell when they are out of date.
 std::string App::forgeSignature(const Project& p) const {
     std::string sig = "genre=" + p.doc.get("forge", "genre") + ";drums=" + drumStyle(p) + ";riffs=" + riffStyle(p) +
-                      ";keys=" + p.doc.get("forge", "keys") + ";guitar=" + sourceOf(p, "guitar") + ";bass=" + sourceOf(p, "bass") +
-                      ";lyrics=" + lyricsChoice(p) + ";absent=" + p.doc.get("sheets", "guitar_absent") + p.doc.get("sheets", "bass_absent");
+                      ";guitar=" + sourceOf(p, "guitar") + ";bass=" + sourceOf(p, "bass") +
+                      ";lyrics=" + lyricsChoice(p) + ";absent=" + p.doc.get("sheets", "guitar_absent") + p.doc.get("sheets", "bass_absent") +
+                      p.doc.get("sheets", "drums_absent");
     for (const char* box : {"guitar", "bass", "drums"}) {
         sig += std::string(";") + box + ":";
         for (auto& f : sheetFiles(p, box))
@@ -387,8 +388,8 @@ void App::drawBandView(const SDL_FRect& r) {
     const float now = float(player_.playhead());
     Project* p = currentProject();
     std::vector<std::string> lanes;
-    for (const char* part : {"guitar", "bass", "drums", "keys"})
-        if (chart_.hasPart(part) || (std::string(part) != "keys" && p && !partAbsent(*p, part))) lanes.push_back(part);
+    for (const char* part : {"guitar", "bass", "drums"})
+        if (chart_.hasPart(part) || (p && !partAbsent(*p, part))) lanes.push_back(part);
     // A part's sound: the stem it is made from, on or off (R22).
     auto soundBox = [&](float x, float y, const std::string& part) {
         const std::string stem = part == "drums" || part == "vocals" || !p ? part : sourceOf(*p, part);

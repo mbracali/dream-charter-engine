@@ -73,3 +73,27 @@ def test_the_window_gets_english():
     assert forge.translate("    afinação da gravação: +3 centésimos") is None  # log file only
     assert forge.english_error(RuntimeError("a partitura não tem pistas")).startswith("the engine stopped")
     assert forge.english_error(ValueError("the bass needs a sheet")) == "the bass needs a sheet"
+
+
+def test_no_drums_in_the_song_skips_them_and_keys_never_chart(tmp_path):
+    doc = project(tmp_path, {"drums_absent": "yes", "bass_absent": "yes"}, [("guitar", "riff.txt", TAB)])
+    doc["forge"] = {"keys": "on"}  # an old project's keys option is ignored (R25)
+    plan = forge.Plan(tmp_path, doc)
+    assert plan.skipped == ["bass", "drums"]
+    assert plan.parts == ["guitar"] and plan.engine_parts == ["guitar"]
+
+
+def test_a_charts_keys_track_is_ignored(tmp_path):
+    import mido
+
+    from midi_io import midi_parts, midi_to_chart
+
+    mid = mido.MidiFile(type=1, ticks_per_beat=480)
+    mid.tracks.append(mido.MidiTrack([mido.MetaMessage("set_tempo", tempo=500000, time=0)]))
+    for name in ("PART KEYS", "PART GUITAR"):
+        track = mido.MidiTrack([mido.MetaMessage("track_name", name=name, time=0)])
+        track += [mido.Message("note_on", note=96, velocity=100, time=0), mido.Message("note_off", note=96, velocity=0, time=240)]
+        mid.tracks.append(track)
+    mid.save(tmp_path / "notes.mid")
+    assert midi_parts(tmp_path / "notes.mid") == {"guitar"}
+    assert midi_to_chart(tmp_path / "notes.mid").parts() == ["guitar"]

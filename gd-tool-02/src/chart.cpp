@@ -7,7 +7,7 @@
 #include <sstream>
 
 namespace {
-const char* const kPartOrder[] = {"guitar", "bass", "keys", "drums"};
+const char* const kPartOrder[] = {"guitar", "bass", "drums"};
 }
 
 bool Chart::load(const std::filesystem::path& file) {

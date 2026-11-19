@@ -15,7 +15,7 @@ import mido
 
 from chart_text import Chart, Note, Vocal
 
-PART_TRACKS = {"PART GUITAR": "guitar", "PART BASS": "bass", "PART KEYS": "keys", "PART DRUMS": "drums"}
+PART_TRACKS = {"PART GUITAR": "guitar", "PART BASS": "bass", "PART DRUMS": "drums"}  # no keys (R25)
 TRACK_OF = {v: k for k, v in PART_TRACKS.items()}
 DIFF_BASE = {0: 60, 1: 72, 2: 84, 3: 96}  # Easy, Medium, Hard, Expert
 STAR_POWER, PHRASE, PHRASE_2 = 116, 105, 106

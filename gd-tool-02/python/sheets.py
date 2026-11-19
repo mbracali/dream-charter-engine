@@ -112,7 +112,7 @@ def pick_tracks(path: Path, instrument: str) -> dict[int, str]:
 # ---- existing charts ----------------------------------------------------------------
 
 CHART_SECTIONS = {"Single": "guitar", "DoubleGuitar": "guitar", "DoubleBass": "bass", "DoubleRhythm": "bass",
-                  "Keyboard": "keys", "Drums": "drums"}
+                  "Drums": "drums"}  # no keys
 CHART_DIFFS = {"Easy": 0, "Medium": 1, "Hard": 2, "Expert": 3}
 
 

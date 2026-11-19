@@ -8,7 +8,7 @@ event per line, times in seconds of the project's audio (no lead-in):
     BEAT <t> <1 = first beat of a bar, else 0>
     SECTION <t> <name>
     NOTE <part> <difficulty 0-3> <t> <sustain> <lane> <flags>
-        part: guitar / bass / keys / drums; difficulty: 0 Easy .. 3 Expert
+        part: guitar / bass / drums (no keys); difficulty: 0 Easy .. 3 Expert
         lane: frets 0 green .. 4 orange; drums 0 kick, 1 red, 2 yellow, 3 blue, 4 green
         flags: h HOPO, s Star Power, c cymbal (drums), - none
     VOCAL <t> <duration> <pitch> <lyric>
@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-PARTS = ("guitar", "bass", "keys", "drums")
+PARTS = ("guitar", "bass", "drums")  # keys are never charted
 
 
 @dataclass

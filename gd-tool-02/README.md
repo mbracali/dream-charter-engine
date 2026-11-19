@@ -29,20 +29,21 @@ a step bar at the top (`Cmd/Ctrl+1..4`):
        the stem and uses only those chords; its lyrics are sung when nothing else gives lyrics;
      - a file in several boxes (a full Guitar Pro score in Guitar and Drums) is aligned once.
    - **Drums** come from the drums stem (ADTOF); a drum sheet is optional, and a drum text tab
-     alone can't be lined up yet.
+     alone can't be lined up yet. **This song has no drums** leaves them out.
+   - **Keys are never charted** (the keys stem is only audio, mixed into `song.ogg`).
    - **Lyrics**: typed / pasted text (`Type / paste`), or `.txt` / `.lrc` files (LRC
      timestamps are dropped); pick one, or No vocals.
-   - **Chart keys too** adds a keys part (Full band export only). **FORGE SONG** goes on.
+   - **FORGE SONG** goes on.
 2. **Song forge** (`python/forge.py`): separates the stems if needed (Demucs, offline),
    then charts every part with dream-charter-engine (`ai_charter`) and the sheets. The
    record spins with a progress bar. Then the **Band** view: the vocals across the top and
-   every instrument's highway side by side (guitar, bass, drums, keys), all on one playhead,
+   every instrument's highway side by side (guitar, bass, drums), all on one playhead,
    Easy..Expert; a checkbox over each part turns its sound on / off, and the vocals always show. **Mixer** shows the stems mixer (mute / solo / waveforms) and the forge
    settings beside it; **One part** shows a single big highway instead. The settings:
    - **Rules**: the engine's genre presets (`ai_charter/genres/`);
    - **Drums**: Heard 0.9 / **Steady** 0.8 / Locked 0.7 (engine `repeat_similarity`: bars at
      least this alike get the same notes);
-   - **Riffs**: **Steady** groups repeating guitar / bass / keys riffs (`consolidate_pitched`,
+   - **Riffs**: **Steady** groups repeating guitar / bass riffs (when the forge charts from the audio: chord sheets only) (`consolidate_pitched`,
      0.8) / Heard leaves each bar as detected;
    - **Guitar / Bass**: the stem each is charted from; **Listen**: full mix or this part.
    **Forge again** lights up when settings or sheets changed.
@@ -58,7 +59,7 @@ a step bar at the top (`Cmd/Ctrl+1..4`):
    the original setlists:
    - **Guitar Hero 1**: guitar (`guitar.ogg` + `song.ogg`);
    - **GH2 / GH3 / Aerosmith**: guitar + bass (`guitar`, `bass`, `song`);
-   - **Full band**: every charted part, one stem each (guitar, bass, drums, vocals, keys).
+   - **Full band**: guitar, bass, drums and vocals, one stem each.
    Each folder has `notes.mid`, `song.ini` (difficulties, length, preview), `album.png` and
    Vorbis `.ogg` stems (no ffmpeg). It goes to the Clone Hero / YARG songs folder set in
    Settings, or to `PROJECT/export/<format>/`. **Send to the Additive menu** (gd-tool-01)

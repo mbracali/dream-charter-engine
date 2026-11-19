@@ -14,7 +14,8 @@ Reads everything from PROJECT_DIR/project.yaml and PROJECT_DIR/sheets/ (Song hom
    forge/forged.txt (a copy, for "Revert to the forged chart").
 
 project.yaml [forge]: genre, drums_style (heard/steady/locked), riffs_style
-(heard/steady), keys (on/off), <part>_source (the stem a part is charted from).
+(heard/steady), <part>_source (the stem guitar / bass is charted from). Keys are never charted.
+project.yaml [sheets]: <part>_absent = yes: the song has no guitar / bass / drums (not charted).
 
 Prints, one per line: STATUS <text>, PROGRESS <0..1>, STEM <name> <path>,
 STEMS_DONE <mode>, COUNT <part> <easy> <medium> <hard> <expert>, DONE, ERROR <text>.
@@ -222,7 +223,7 @@ def write_log(text: str) -> None:
 STEPS = {"1": "Step 1 of 5: reading the song...", "2": "Step 2 of 5: finding the beat and the bars...",
          "3": "Step 3 of 5: loading the stems...", "4": "Step 4 of 5: charting every part...",
          "5": "Step 5 of 5: writing the chart..."}
-PARTS_PT = r"(guitar|bass|keys|drums|vocals)"
+PARTS_PT = r"(guitar|bass|drums|vocals)"
 TRANSLATIONS = [
     (r"^(\d)/5\b", lambda m: STEPS.get(m[1])),
     (r"^BPM médio: ([\d.]+)", lambda m: f"Average tempo: {m[1]} BPM"),
@@ -280,9 +281,9 @@ class Plan:
         self.genre = str(forge.get("genre") or "") or None
         self.drum_similarity = DRUM_SIMILARITY.get(str(forge.get("drums_style") or "steady"), 0.8)
         self.riff_similarity = RIFF_SIMILARITY.get(str(forge.get("riffs_style") or "steady"), 0.8)
-        self.sources = {p: str(forge.get(f"{p}_source")) for p in ("guitar", "bass", "keys")
+        self.sources = {p: str(forge.get(f"{p}_source")) for p in ("guitar", "bass")
                         if forge.get(f"{p}_source") and str(forge.get(f"{p}_source")) != p}
-        parts = ["guitar", "bass", "drums"] + (["keys"] if str(forge.get("keys") or "") == "on" else [])
+        parts = ["guitar", "bass", "drums"]  # never keys (R25)
         sheets_doc = doc.get("sheets") or {}
         self.refs: dict[str, Path] = {}
         self.fidelity: dict[str, str] = {}
@@ -317,11 +318,16 @@ class Plan:
             elif not has_sheet:
                 raise ValueError(f"the {part} needs a sheet (a tab, MIDI, chart or chord sheet), "
                                  f"or tick \"This song has no {part}\" on Song home")
+        if str(sheets_doc.get("drums_absent") or "") == "yes":  # R24: drums need no sheet, but can be absent
+            parts.remove("drums")
+            self.charts.pop("drums", None)
+            self.refs.pop("drums", None)
+            self.skipped.append("drums")
         self.parts = parts
         # An attached chart replaces the engine for its part.
         self.engine_parts = [p for p in parts if p not in self.charts]
         # Riff steadiness only for parts the engine hears; sheet-driven parts stay as written.
-        self.riff_by_part = {p: 0.0 if p in self.refs else self.riff_similarity for p in ("guitar", "bass", "keys")}
+        self.riff_by_part = {p: 0.0 if p in self.refs else self.riff_similarity for p in ("guitar", "bass")}
         self.lyrics, self.use_cifra_lyrics = self._lyrics(project, doc)
 
     @staticmethod

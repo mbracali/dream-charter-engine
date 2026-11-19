@@ -99,7 +99,7 @@ std::string App::sheetKind(const fs::path& file, const std::string& box) {
     if (ext == ".mid" || ext == ".midi" || ext == ".kar") {
         // A game chart has PART tracks (track names are plain text in the file).
         const std::string head = readHead(file);
-        for (const char* t : {"PART GUITAR", "PART BASS", "PART DRUMS", "PART KEYS"})
+        for (const char* t : {"PART GUITAR", "PART BASS", "PART DRUMS"})
             if (head.find(t) != std::string::npos) return "chart";
         return "score";
     }
@@ -390,8 +390,7 @@ void App::drawHome(Project& p, const SDL_FRect& r) {
     text(hx, r.y + 6 * u_, "MUSIC SHEETS", kSand, 1.5f * u_);
     float hy = r.y + 28 * u_;
     for (auto& l : wrap("Guitar and bass need a sheet: a tab, MIDI or chart gives the notes; a chord sheet "
-                        "only limits the chords the forge hears. Drums come from the drums stem (a sheet is "
-                        "optional). Use Paste for text tabs.",
+                        "only limits the chords the forge hears. Drums come from the drums stem.",
                         size_t(hw / (8 * 1.25f * u_)))) {
         text(hx, hy, l, kDim, 1.25f * u_);
         hy += 16 * u_;
@@ -414,15 +413,7 @@ void App::drawHome(Project& p, const SDL_FRect& r) {
     const std::string label = forging ? "FORGING..." : p.forged() ? "FORGE AGAIN" : "FORGE SONG";
     const std::string blocker = forgeBlocker(p);
     bigButton({r.x + (r.w - fw) / 2, fy, fw, fh}, label, [this] { forgeSong(); }, (!busy(p) || forging) && (blocker.empty() || forging));
-    // Keys (left) and what happens (right).
-    SDL_FRect kb{r.x, fy + fh / 2 - 9 * u_, 18 * u_, 18 * u_};
-    const bool keys = p.doc.get("forge", "keys") == "on";
-    checkbox(kb, keys);
-    text(kb.x + 28 * u_, kb.y + 3 * u_, "Chart keys too (Full band)", keys ? kCream : kDim, 1.5f * u_);
-    hit({kb.x, kb.y - 6 * u_, 28 * u_ + textW("Chart keys too (Full band)", 1.5f * u_), 30 * u_},
-        [this, keys](float, float) {
-            if (Project* q = currentProject()) setValue(*q, "forge", "keys", keys ? "off" : "on");
-        });
+    // What happens (right of the button).
     std::string note = forging ? "Running: see Song forge." : !blocker.empty() ? blocker : !p.forged() ? "Stems, then charts: a few minutes."
                        : tuned ? "Replaces your fine tuning." : "Forged " + p.doc.get("forge", "forged_at").substr(0, 10) + ".";
     const float nx = r.x + (r.w + fw) / 2 + 20 * u_;
@@ -451,8 +442,8 @@ void App::drawBox(Project& p, const BoxDef& def, const SDL_FRect& r) {
     }, true, false, 28 * u_);
 
     auto files = sheetFiles(p, box);
-    // Guitar / bass have a two-line footer: the "no guitar" checkbox, then the summary.
-    const float listTop = r.y + 54 * u_, rowH = 28 * u_, footY = r.y + r.h - (box == "drums" ? 28 : 50) * u_;
+    // A two-line footer: the "This song has no ..." checkbox, then the summary.
+    const float listTop = r.y + 54 * u_, rowH = 28 * u_, footY = r.y + r.h - 50 * u_;
     if (files.empty()) {
         SDL_FRect zone{r.x + 16 * u_, listTop, r.w - 32 * u_, footY - listTop - 8 * u_};
         for (float dx = 0; dx < zone.w; dx += 12 * u_) {  // dashed outline
@@ -506,9 +497,9 @@ void App::drawBox(Project& p, const BoxDef& def, const SDL_FRect& r) {
     }
     fill({r.x + 16 * u_, footY - 4 * u_, r.w - 32 * u_, u_}, kBar);
     const bool absent = partAbsent(p, box), missing = box != "drums" && !absent && !hasSheet(p, box);
-    const float sy = box == "drums" ? footY + 6 * u_ : footY + 28 * u_;
+    const float sy = footY + 28 * u_;
     text(r.x + 16 * u_, sy, boxSummary(p, box), missing ? kOxblood : absent ? kMuted : kDim, 1.25f * u_, r.w - 32 * u_);
-    if (box != "drums") {  // R20: the user says the song has no guitar / bass
+    {  // R20 / R24: the user says the song has no guitar / bass / drums
         const std::string l = "This song has no " + box;
         const float lw = textW(l, 1.25f * u_) + 28 * u_;
         SDL_FRect cb{r.x + 16 * u_, footY + 4 * u_, 16 * u_, 16 * u_};

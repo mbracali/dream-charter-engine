@@ -32,6 +32,8 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | R21 | MIDI files in every box (as a score, or as a chart with PART tracks) | ✅ | tested with a MIDI score of the Evil Papagali tab: same result as the text tab |
 | R22 | Band view: a checkbox over each highway (and the vocals) turns that instrument's sound on / off | ✅ | toggles the stem the part is made from |
 | R23 | Vocals always show (band view, Fine tuning, Export), even when empty | ✅ | |
+| R24 | "This song has no drums" checkbox: drums are not forged | ✅ | `sheets: drums_absent` |
+| R25 | No keys at all: remove "Chart keys too", the keys part (forge, band view, Fine tuning, Export, imported charts) | ✅ | the keys stem stays as audio (song.ogg); PART KEYS of imported charts is ignored |
 
 ## Later
 

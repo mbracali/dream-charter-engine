@@ -8,7 +8,7 @@ song.ini, album.png and one .ogg per stem. Targets follow the original setlists:
 
     gh1    Guitar Hero 1:             guitar                    guitar.ogg + song.ogg
     gh2    Guitar Hero 2 / 3 / Aerosmith: guitar and bass       guitar, bass, song
-    full   Full band (GH4+ / Rock Band / YARG): every charted part, one stem each
+    full   Full band (GH4+ / Rock Band / YARG): guitar, bass, drums, vocals, one stem each
 
 A part the target has but the chart lacks is left out (its audio goes to song.ogg).
 Clone Hero and YARG read the same folder; --format only names the destination and the
@@ -33,7 +33,7 @@ from midi_io import chart_to_midi
 TARGETS = {
     "gh1": ("GH1", ["guitar"]),
     "gh2": ("GH2-GH3", ["guitar", "bass"]),
-    "full": ("Full band", ["guitar", "bass", "drums", "vocals", "keys"]),
+    "full": ("Full band", ["guitar", "bass", "drums", "vocals"]),
 }
 STEMS = ("drums", "bass", "other", "vocals", "guitar", "keys")
 FORMATS = {"clonehero": "Clone Hero", "yarg": "YARG"}
@@ -95,7 +95,7 @@ def export_target(project: Path, doc: dict, chart: chart_text.Chart, base_midi: 
     # Audio: one stem per exported part, the rest mixed into song.ogg.
     forge = doc.get("forge") or {}
     stems_dir = project / "stems"
-    source = {p: str(forge.get(f"{p}_source") or p) for p in ("guitar", "bass", "keys")}
+    source = {p: str(forge.get(f"{p}_source") or p) for p in ("guitar", "bass")}
     source.update({"drums": "drums", "vocals": "vocals"})
     used: dict[str, str] = {}
     for p in parts:
@@ -136,7 +136,7 @@ def export_target(project: Path, doc: dict, chart: chart_text.Chart, base_midi: 
 def write_song_ini(path: Path, doc: dict, chart: chart_text.Chart, parts: list[str], label: str, fmt: str) -> None:
     song, project = doc.get("song") or {}, doc.get("project") or {}
     duration = chart.duration or max([n.t + n.sustain for n in chart.notes] + [0.0])
-    diffs = {p: difficulty(chart.part(p), duration) if p in parts else -1 for p in ("guitar", "bass", "drums", "keys")}
+    diffs = {p: difficulty(chart.part(p), duration) if p in parts else -1 for p in ("guitar", "bass", "drums")}
     vocal_diff = -1
     if "vocals" in parts and chart.vocals and duration > 0:
         vocal_diff = min(6, int(len(chart.vocals) / duration * 2))
@@ -156,7 +156,6 @@ def write_song_ini(path: Path, doc: dict, chart: chart_text.Chart, parts: list[s
         "diff_bass": diffs["bass"],
         "diff_drums": diffs["drums"],
         "diff_drums_real": diffs["drums"],
-        "diff_keys": diffs["keys"],
         "diff_vocals": vocal_diff,
         "pro_drums": "True" if "drums" in parts else "False",
         "five_lane_drums": "False",
