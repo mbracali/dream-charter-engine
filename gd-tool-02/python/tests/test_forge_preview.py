@@ -71,3 +71,22 @@ def test_riff_steadiness_reaches_guitar_bass_and_keys(tmp_path):
     loaded = load_rules(forge.write_rules(tmp_path, drum_similarity=0.8, riff_similarity=0.8), "metal")
     assert [loaded.detection[p].repeat_similarity for p in ("guitar", "bass", "keys")] == [0.8, 0.8, 0.8]
     assert loaded.detection["guitar"].onset_delta == 0.03  # the genre preset still applies
+
+
+def test_the_forge_never_downloads():
+    import urllib.request
+
+    import pytest
+
+    torch = pytest.importorskip("torch")  # the Linux check runs without torch
+    import torch.hub
+
+    saved = urllib.request.urlopen, torch.hub.download_url_to_file
+    try:
+        forge.block_downloads()
+        with pytest.raises(forge.OfflineError):
+            urllib.request.urlopen("https://example.com/model.pt")
+        with pytest.raises(forge.OfflineError):
+            torch.hub.download_url_to_file("https://example.com/model.pt", "/tmp/x")
+    finally:
+        urllib.request.urlopen, torch.hub.download_url_to_file = saved

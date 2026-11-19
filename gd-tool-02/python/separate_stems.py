@@ -7,6 +7,7 @@ Writes OUT_DIR/<stem>.wav (16-bit PCM) and prints one line per event on stdout,
 which the C++ window reads:
     STATUS <text>
     STEM <name> <path>
+    PROGRESS <0..1>
     DONE
     ERROR <text>
 The MP3 is decoded with libsndfile (soundfile), so ffmpeg is not needed.
@@ -75,8 +76,24 @@ def load_local_model(name: str):
     return model
 
 
-def separate_demucs(audio: np.ndarray, sr: int, out_dir: Path, model_name: str) -> None:
+class _Progress:
+    """Stands in for the tqdm module inside demucs.apply: apply_model wraps its list of
+    chunks in tqdm.tqdm(...) when progress=True; we report each chunk as PROGRESS."""
+
+    def __init__(self, report) -> None:
+        self.report = report
+
+    def tqdm(self, iterable, **_kwargs):
+        items = list(iterable)
+        for i, item in enumerate(items):
+            yield item
+            self.report((i + 1) / max(1, len(items)))
+
+
+def separate_demucs(audio: np.ndarray, sr: int, out_dir: Path, model_name: str,
+                    progress=lambda fraction: None) -> None:
     import torch
+    from demucs import apply as demucs_apply
     from demucs.apply import apply_model
 
     emit("STATUS", f"Loading model {model_name} from {MODELS_DIR}...")
@@ -98,8 +115,9 @@ def separate_demucs(audio: np.ndarray, sr: int, out_dir: Path, model_name: str) 
     random.seed(0)
     torch.manual_seed(0)
     emit("STATUS", f"Separating on {device} (a few minutes)...")
+    demucs_apply.tqdm = _Progress(progress)
     with torch.no_grad():
-        sources = apply_model(model, wav[None], device=device, progress=False, split=True, overlap=0.25)[0]
+        sources = apply_model(model, wav[None], device=device, progress=True, split=True, overlap=0.25)[0]
     sources = sources * (ref.std() + 1e-8) + ref.mean()
     for theirs, tensor in zip(model.sources, sources):
         write_stem(out_dir, DEMUCS_NAMES.get(theirs, theirs), tensor.cpu().numpy().T, model.samplerate)
@@ -114,6 +132,22 @@ def separate_simple(audio: np.ndarray, sr: int, out_dir: Path) -> None:
     write_stem(out_dir, "other", (audio - low).astype(np.float32), sr)
 
 
+def separate(song: Path, out_dir: Path, mode: str = "demucs", model: str = "htdemucs_6s",
+             progress=lambda fraction: None) -> None:
+    """Writes out_dir/<stem>.wav and out_dir/.done; progress(0..1) as it goes."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    emit("STATUS", f"Decoding {song.name}...")
+    audio, sr = load_audio(song)
+    write_stem(out_dir, "mix", audio, sr)
+    progress(0.03)
+    if mode == "demucs":
+        separate_demucs(audio, sr, out_dir, model, lambda f: progress(0.03 + 0.95 * f))
+    else:
+        separate_simple(audio, sr, out_dir)
+    (out_dir / ".done").touch()
+    progress(1.0)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("song", type=Path)
@@ -122,15 +156,8 @@ def main() -> int:
     parser.add_argument("--model", default="htdemucs_6s")
     args = parser.parse_args()
     try:
-        args.out_dir.mkdir(parents=True, exist_ok=True)
-        emit("STATUS", f"Decoding {args.song.name}...")
-        audio, sr = load_audio(args.song)
-        write_stem(args.out_dir, "mix", audio, sr)
-        if args.mode == "demucs":
-            separate_demucs(audio, sr, args.out_dir, args.model)
-        else:
-            separate_simple(audio, sr, args.out_dir)
-        (args.out_dir / ".done").touch()
+        separate(args.song, args.out_dir, args.mode, args.model,
+                 lambda fraction: emit("PROGRESS", f"{fraction:.3f}"))
         emit("DONE")
         return 0
     except Exception as exc:  # noqa: BLE001 - reported to the window

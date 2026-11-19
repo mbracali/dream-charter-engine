@@ -1,75 +1,97 @@
-# gd-tool-02: Stem Viewer (spike)
+# gd-tool-02: Dream Charter Engine
 
-Each song is a **project**: a folder in your projects folder (chosen the first time the
-app starts; change it in **Settings > Projects Folder**). Drop an MP3/FLAC/WAV on the
-window and the app:
+Any MP3 / WAV becomes a playable Clone Hero / YARG (Guitar Hero / Rock Band style)
+custom song. The spec is in [docs/product_spec.md](docs/product_spec.md), the backlog in
+[docs/backlog.md](docs/backlog.md) and the working rules in
+[docs/general_guidelines.md](docs/general_guidelines.md).
 
-1. creates `<projects folder>/<song>/` with a copy of the song and a `project.yaml`;
-2. reads everything it can from the file (`python/extract_metadata.py`): tags, cover,
-   embedded lyrics, format, duration, bitrate, BPM, key, loudness; and opens the
-   **Metadata** tab so you can check and fix it;
-3. separates the stems in the background (`python/separate_stems.py`, Demucs
-   `htdemucs_6s`, offline) into `stems/`.
+## The flow
 
-A project folder:
+Drop a song on the window (or **Settings > Open Song**). A record spins and a progress bar
+fills while the song is read (`python/extract_metadata.py`: tags, cover, embedded lyrics,
+duration, BPM, key, loudness). The song becomes a **project**, and its four screens show as
+a step bar at the top (`Cmd/Ctrl+1..4`):
+
+1. **Song home**: the song (cover, details, `Edit details`) and one box per music sheet:
+   - **Guitar / Bass / Drums**: drop or `+ Add` any number of sheets and tick the ones the
+     forge should use:
+     - Guitar Pro tabs (`.gp3 .gp4 .gp5 .gpx .gp .gp6-8`) and MIDI scores guide the engine's
+       transcription (pitches, chords, rhythm), aligned to the audio;
+     - chord sheets (`.txt`, Cifra Club / Ultimate Guitar style) limit the chords the engine
+       recognises, and their lyrics are sung when nothing else gives lyrics;
+     - an existing chart (`.chart`, or a `.mid` with `PART` tracks) is used **as-is** for
+       its part (it must be made for this audio: no offset search yet);
+     - no sheet at all: the forge charts the stem alone.
+   - **Lyrics**: typed / pasted text (`Type / paste`), or `.txt` / `.lrc` files (LRC
+     timestamps are dropped); pick one, or No vocals.
+   - **Chart keys too** adds a keys part (Full band export only). **FORGE SONG** goes on.
+2. **Song forge** (`python/forge.py`): separates the stems if needed (Demucs, offline),
+   then charts every part with dream-charter-engine (`ai_charter`) and the sheets. The
+   record spins with a progress bar. Then: the stems mixer (mute / solo / waveforms), the
+   charts on a Guitar Hero-style highway (part, Easy..Expert, song overview), and the forge
+   settings:
+   - **Rules**: the engine's genre presets (`ai_charter/genres/`);
+   - **Drums**: Heard 0.9 / **Steady** 0.8 / Locked 0.7 (engine `repeat_similarity`: bars at
+     least this alike get the same notes);
+   - **Riffs**: **Steady** groups repeating guitar / bass / keys riffs (`consolidate_pitched`,
+     0.8) / Heard leaves each bar as detected;
+   - **Guitar / Bass**: the stem each is charted from; **Listen**: full mix or this part.
+   **Forge again** lights up when settings or sheets changed.
+3. **Fine tuning**: a piano-roll editor of `forge/chart.txt`, with a highway preview.
+   - Guitar / bass / drums: click an empty spot to add a note (snapped to the grid: 1/4 ..
+     1/32, triplets), drag to move (time and lane), drag a tail's end (or Alt+drag) for
+     sustain, right click or Delete to remove, **H** HOPO, **S** Star Power, **C** cymbal;
+     arrows nudge the selected note.
+   - Vocals: drag to move / re-pitch, drag the right edge to resize, click to add; Enter
+     edits the syllable's text (Tab: next one; `-` joins a word, `+` is a slide).
+   - Undo / redo (`Cmd/Ctrl+Z`, `Shift+Z`), **Revert to forged**; every edit is saved.
+4. **Export song** (`python/export_song.py`): one Clone Hero / YARG folder per target, by
+   the original setlists:
+   - **Guitar Hero 1**: guitar (`guitar.ogg` + `song.ogg`);
+   - **GH2 / GH3 / Aerosmith**: guitar + bass (`guitar`, `bass`, `song`);
+   - **Full band**: every charted part, one stem each (guitar, bass, drums, vocals, keys).
+   Each folder has `notes.mid`, `song.ini` (difficulties, length, preview), `album.png` and
+   Vorbis `.ogg` stems (no ffmpeg). It goes to the Clone Hero / YARG songs folder set in
+   Settings, or to `PROJECT/export/<format>/`. **Send to the Additive menu** (gd-tool-01)
+   is disabled until that tool defines its format.
+
+## A project folder
 
 ```
-Artist - Song/
-  project.yaml   metadata (project, song, analysis, audio, stems)
-  song.mp3       the copied song
-  cover.png      cover art from the tags (if any)
-  lyrics.txt     one sung phrase per line (from the tags, or typed in the app)
+Song name/
+  project.yaml   metadata + settings (song, analysis, audio, stems, sheets, forge, export)
+  song.mp3       the copied song           cover.png (+ cover.bmp for the window)
+  lyrics.txt     typed lyrics              sheets/<guitar|bass|drums|lyrics>/  the sheets
   stems/         mix, guitar, bass, drums, keys, vocals, other (.wav)
+  forge/         <Artist - Title>/notes.mid (the engine's; its tempo map is reused),
+                 chart.txt (what Fine tuning edits), forged.txt (the forge's own copy)
+  export/        exports, when no songs folder is set
 ```
 
-A project is opened on **Info**; its other sections are **Metadata**, **Stems** (playback,
-mute/solo and separation controls), **Lyrics**, **Forge** and **Export** (not yet).
+`chart.txt` is plain text, one event per line, in seconds of the song
+(`python/chart_text.py` documents it); `python/midi_io.py` converts notes.mid <-> chart.
 
-### Forge
+## Code
 
-Forge charts the project with dream-charter-engine (`python/forge.py`, which runs
-`ai_charter` in-process on the project's stems, no new separation) and shows the result on
-a Guitar Hero-style board that scrolls with the playback:
+C++17 + SDL3 (like gd-engine-launcher), drawn with SDL_Renderer and SDL's built-in pixel
+font (ASCII only: "Canção" shows as "Cancao"; files keep the real text).
 
-- **Parts**: turn Guitar, Bass, Drums, Keys and Vocals on or off, and choose the stem each
-  is made from (guitar, bass and keys can take another stem, e.g. keys from `other`;
-  drums are always the drums stem; vocals need the lyrics);
-- **Rules**: the engine's genre presets (`ai_charter/genres/`);
-- **Drums**: how steady the grooves are. The engine charts each bar from what it hears, so
-  a repeating beat comes out a little different in each bar; bars at least this alike get
-  the same notes: **Heard** 0.9 (the engine's default), **Steady** 0.8 (default here),
-  **Locked** 0.7. Measured on a drum-machine song: 23 / 15 / 11 different bar patterns, 39% /
-  67% / 74% of bars equal to the one before. Lower values can flatten a real fill;
-- **Riffs**: the same for guitar, bass and keys: **Steady** (default) groups bars by rhythm
-  and the notes in play, then keeps each note, and its pitch, by majority, so a riff comes out
-  the same each time it repeats; **Heard** leaves each bar as detected. This is an engine rule,
-  `[detection.<part>] repeat_similarity` (`consolidate_pitched` in
-  `ai_charter/charting/drum_repeats.py`, off by default in the engine; Forge uses 0.8). Measured
-  on a metal song: bars with an identical repeat, guitar 0% -> 78%, bass 22% -> 86%, with the
-  same attacks charted; 0.7 dropped a third of the guitar's real notes, so it is not offered;
-- **Listen**: the full mix, or only the stem the selected part is made from;
-- **Easy / Medium / Hard / Expert**, the note count of each part, and an overview of the
-  song (note density, sections) to click and seek; the mouse wheel scrubs the board.
+| File | What |
+|---|---|
+| `src/app.h`, `src/app.cpp` | the App: settings, projects, jobs, input, shell (menu, sidebar, step bar), widgets |
+| `src/screen_home.cpp` | Song home: sheets, details, lyrics editor |
+| `src/screen_forge.cpp` | Song forge: progress, mixer, settings, preview |
+| `src/screen_tune.cpp` | Fine tuning: the note / vocal editor |
+| `src/screen_export.cpp` | Export song |
+| `src/board.cpp` | the highway, vocal board and overview |
+| `src/chart.*` | chart.txt in C++ (load, save, beat grid) and drawing shapes |
+| `src/stems.*`, `src/worker.*`, `src/yaml_doc.*`, `src/fields.h`, `src/text_util.h` | playback, Python jobs, YAML subset, project.yaml fields, UTF-8 |
+| `python/` | `extract_metadata.py`, `separate_stems.py`, `forge.py`, `sheets.py`, `chart_text.py`, `midi_io.py`, `export_song.py` |
 
-Forge runs the engine with its best optional parts, as its README recommends: **Beat This!**
-(beats and bar starts; checkpoint in `models/torch/hub/checkpoints/beat_this-final0.ckpt`,
-SHA-256 `8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331`, git-ignored) and
-**ADTOF** (drum transcription; weights inside its package; CC BY-NC-SA, non-commercial).
-Without them the engine falls back to librosa's beat tracker (no bar starts) and rules-only
-drum lanes. Tests: `.venv/bin/python -m pytest python/tests` and `ctest --test-dir build`. The app logs what it
-does (jobs, stems, tabs) to `gd-tool-02.log` next to `settings.yaml`.
-
-The charts go to `forge/<Artist - Title>/notes.mid` (+ `song.ini`), and the board reads
-`forge/preview.txt`. The settings are saved in `project.yaml` (`forge:`). The game's .ogg
-files are not written yet (Export), so ffmpeg is not needed.
-
-Code: `src/app.cpp` (the window), `src/stems.*` (playback), `src/worker.*` (Python
-jobs), `src/yaml_doc.*` (the YAML subset of our files), `src/text_util.h` (UTF-8), `src/forge.*` (the chart preview and the board's shapes).
-Settings live in `settings.yaml` in the user's app-data folder
-(`~/Library/Application Support/mbracali/gd-tool-02/` on macOS).
-
-The window uses SDL's built-in pixel font, which only draws ASCII: accented letters
-show without the accent ("Canção" -> "Cancao"), but files keep the real text.
+The Python helpers print one event per line (`STATUS`, `PROGRESS 0..1`, `STEM`, `COUNT`,
+`EXPORTED`, `DONE`, `ERROR`), read by `src/worker.*`. The app logs its jobs to
+`gd-tool-02.log` next to `settings.yaml` (`~/Library/Application Support/mbracali/gd-tool-02/`
+on macOS).
 
 ## Setup (macOS)
 
@@ -77,23 +99,36 @@ show without the accent ("Canção" -> "Cancao"), but files keep the real text.
 brew install sdl3 cmake
 python3.12 -m venv .venv && .venv/bin/pip install -r python/requirements.txt
 cmake -S . -B build && cmake --build build -j
-./build/gd-tool-02                 # or: ./build/gd-tool-02 song.mp3 | stems-folder/ | --simple
+./build/gd-tool-02                 # or: ./build/gd-tool-02 song.mp3
 ```
+
+## Tests
+
+```bash
+ctest --test-dir build                      # C++: Python job output, chart.txt + beat grid
+.venv/bin/python -m pytest -q python/tests  # Python: chart <-> MIDI, sheets, .chart, export, offline
+scripts/linux_test.sh                       # Linux (Fedora container, podman or docker): build,
+                                            # both test suites, a headless run of every screen
+```
+
+Debug flags (screenshots): `--settings FILE`, `--screenshot FILE.bmp`, `--screen 0-3`,
+`--part NAME`, `--seek S`, `--menu N`, `--hover X Y`, `--overlay details|lyrics|help`,
+`--forge`, `--wait-jobs`, `--simple`.
 
 ## Models (fully offline)
 
-Nothing is downloaded at run time: the separator reads the Demucs weights from
-`models/` and blocks Hugging Face access (`HF_HUB_OFFLINE=1`). The files are the
-`adefossez/HTDemucs-6s` Hugging Face repo (MIT license), copied once:
+Nothing is downloaded at run time: the separator reads Demucs from `models/`
+(`HF_HUB_OFFLINE=1`), and the forge refuses any download (`forge.block_downloads`): a
+missing model is skipped and the engine uses its fallback.
 
-| File | SHA-256 |
-|---|---|
-| `models/htdemucs_6s.yaml` | `207405151270af8fd81c2373c25d27950916682ac91dca7884a11ce13dad6f58` |
-| `models/5c90dfd2.safetensors` (~105 MB, git-ignored) | `d2a1745f0744721f6b8ca5bf469b67c651ea5ed1b52998cab033b2158609d411` |
+| File (git-ignored unless noted) | What | License | SHA-256 |
+|---|---|---|---|
+| `models/htdemucs_6s.yaml` (in git) | Demucs 6-stem bag | MIT | `207405151270af8f...` |
+| `models/5c90dfd2.safetensors` (~105 MB) | Demucs weights (`adefossez/HTDemucs-6s`) | MIT | `d2a1745f0744721f...` |
+| `models/torch/hub/checkpoints/beat_this-final0.ckpt` | Beat This! (beats, bar starts) | MIT | `8c328b45f59d8dd3...` |
+| `models/torch/hub/checkpoints/model.pt` (~1.26 GB) | torchaudio MMS_FA (lyrics alignment) | CC BY-NC 4.0 | `20ef12963ab4924b...` |
+| inside the `adtof-pytorch` package | ADTOF drum transcription | CC BY-NC-SA | |
 
-The separation is seeded, so the same song always gives the same stems.
-
-Keys: see **Help > Keyboard Shortcuts** (F1).
-
-Debug flags (for screenshots in tests): `--settings FILE`, `--screenshot FILE.bmp`,
-`--tab N`, `--menu N`, `--hover X Y`, `--wait-jobs`, `--seek S`, `--part NAME`, `--forge`.
+Without MMS_FA the engine places the lyrics with its older aligner; without Beat This! it
+uses librosa's beat tracker (no bar starts); without ADTOF, rules-only drum lanes. MMS_FA
+and ADTOF are non-commercial licenses (see the backlog's licence item).

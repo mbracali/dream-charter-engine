@@ -191,8 +191,10 @@ def analyse(path: Path) -> dict:
 
     sr = 22050
     y = librosa.resample(mono, orig_sr=sr_full, target_sr=sr) if sr_full != sr else mono
+    emit("PROGRESS", "0.45")
     emit("STATUS", "Detecting the tempo...")
     tempo = librosa.feature.tempo(y=y, sr=sr, aggregate=np.median)
+    emit("PROGRESS", "0.65")
     emit("STATUS", "Detecting the key...")
     harmonic = librosa.effects.harmonic(y)
     chroma = librosa.feature.chroma_cqt(y=harmonic, sr=sr).mean(axis=1)
@@ -237,6 +239,7 @@ def save_cover(data: bytes, out: Path) -> bool:
         return False
     image.thumbnail((600, 600))
     image.save(out, "PNG")
+    image.save(out.with_suffix(".bmp"), "BMP")  # for the window: SDL reads BMP everywhere (PNG needs SDL 3.4)
     return True
 
 
@@ -249,6 +252,7 @@ def main() -> int:
     try:
         doc = yaml.safe_load(project_file.read_text(encoding="utf-8")) if project_file.exists() else {}
         doc = doc or {}
+        emit("PROGRESS", "0.05")
         emit("STATUS", "Reading the tags...")
         song, lyrics, cover, raw = read_tags(song_path)
         fill(doc, "song", song)
@@ -256,6 +260,7 @@ def main() -> int:
         title, artist = doc["song"].get("title"), doc["song"].get("artist")
         fill(doc, "project", {"name": f"{artist} - {title}" if artist and title else title})
         fill(doc, "audio", file_info(song_path, raw))
+        emit("PROGRESS", "0.2")
         emit("STATUS", "Analysing the audio...")
         fill(doc, "analysis", analyse(song_path))
         if cover and not (project_dir / "cover.png").exists() and save_cover(cover, project_dir / "cover.png"):
@@ -264,6 +269,7 @@ def main() -> int:
             (project_dir / "lyrics.txt").write_text(lyrics.strip() + "\n", encoding="utf-8")
         fill(doc, "project", {"metadata_extracted_at": dt.datetime.now().isoformat(timespec="seconds")})
         write_project(project_file, doc)
+        emit("PROGRESS", "1")
         emit("DONE")
         return 0
     except Exception as exc:  # noqa: BLE001 - reported to the window

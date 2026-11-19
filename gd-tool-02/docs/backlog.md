@@ -1,0 +1,57 @@
+# gd-tool-02 backlog
+
+The single backlog of gd-tool-02 (the Dream Charter Engine app). Read and
+update it at the start and at the end of every task. IDs are stable.
+
+Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ parked
+
+## v1 rework (spec: [product_spec.md](product_spec.md), started 2026-11-19)
+
+| ID | Item | Status | Notes |
+|---|---|---|---|
+| R01 | Guidelines, spec and backlog files in `docs/` | ✅ | |
+| R02 | Load a song: spinning disc + progress bar while the metadata is read; the song becomes a project | ✅ | `drawLoading`, PROGRESS lines from extract_metadata.py |
+| R03 | Step bar at the top: Song home > Song forge > Fine tuning > Export song (current highlighted, done ones checked) | ✅ | Tuning/Export unlock once forged; shrinks on narrow windows |
+| R04 | Song home: guitar / bass / drums / lyrics boxes, several sheets each, choose which to use; FORGE SONG button | ✅ | drop on a box or + Add; checkboxes (lyrics: one choice); Details + lyrics editor overlays; keys toggle |
+| R05 | Sheets: Guitar Pro and MIDI scores guide the engine (one file per instrument, merged) | 🟡 | Code done (`install_references`, `sheets.pick_tracks`); not yet run on a real Guitar Pro file of a song we have |
+| R06 | Sheets: chord sheets (cifra) limit the chords and can give the lyrics | ✅ | verified in a forge run (test chord sheet) |
+| R07 | Sheets: existing charts (.chart, notes.mid with PART tracks) used as-is for that part | ✅ | unit-tested parsers; assumes the chart was made for this audio (L02) |
+| R08 | Song forge: separation (if needed) + charting with spinning disc + progress bar; stems mixer + chart preview after | ✅ | full run 90 s on M-series (Demucs + engine) |
+| R09 | Fine tuning: note editor for guitar / bass / drums (add, delete, move, sustain, HOPO, star power, cymbal), undo | ✅ | `--selftest` drives it (23 checks); highway preview |
+| R10 | Fine tuning: vocals (re-pitch, move, lyric text) | ✅ | phrases are extended on export for moved/added syllables |
+| R11 | Export song: Clone Hero and YARG, targets GH1 / GH2-GH3-Aerosmith / Full band, OGG stems | ✅ | Clone Hero and YARG folders are the same layout; not yet loaded in the games themselves (L08) |
+| R12 | Export to the Additive menu folder (gd-tool-01) | ⏸️ | Disabled in v1: gd-tool-01 has no format yet |
+| R13 | Linux build + tests (podman, Fedora) | ✅ | `scripts/linux_test.sh` |
+
+## Later
+
+| ID | Item | Status | Notes |
+|---|---|---|---|
+| L01 | Several reference tabs for the same instrument: pick per bar across files | ❌ | v1 uses the first checked file per instrument |
+| L02 | Existing chart imported with another audio: find the offset | ❌ | |
+| L03 | Fine tuning: regenerate Easy/Medium/Hard from an edited Expert | ❌ | engine reductions |
+| L04 | YARG `.sng` package | ❌ | |
+| L05 | A real TTF font (accents, nicer text) | ❌ | SDL debug font is ASCII only |
+| L06 | Windows build (paths, Python venv location, dialogs) | ❌ | |
+| L07 | Export a lead-in (silence before the first note) | ❌ | Clone Hero is fine without |
+| L08 | Load an export in Clone Hero and YARG on a real install and play it | ❌ | needs the games installed; notes.mid round-trips to chart.txt exactly |
+| L09 | Licence: MMS_FA (CC BY-NC 4.0) and ADTOF (CC BY-NC-SA) weights are non-commercial | ⏸️ | Decide with the project licence |
+| L10 | Windows / Android runs | ❌ | not tested; Windows python path is coded (`.venv/Scripts/python.exe`) |
+| L11 | Old projects (before the rework) have `forge/preview.txt` only: they show as not forged until forged again | ⏸️ | forge again, or convert with `forge.py --preview-only` |
+
+## Bugs found in the rework (fixed)
+
+| ID | Bug | Status | Notes |
+|---|---|---|---|
+| B01 | Forge downloaded the 1.26 GB MMS_FA model on its first lyrics run (must be offline) | ✅ | `forge.block_downloads()`; model kept in models/torch (git-ignored), test |
+| B02 | libsndfile crashed (segfault) writing a whole song to OGG in one call | ✅ | write in blocks; test with 4 minutes of audio |
+| B03 | `SDL_LoadPNG` needs SDL 3.4; Linux distros ship 3.2 (build broke) | ✅ | BMP for the window's images (disc, cover.bmp) |
+
+## Done before the rework (spike)
+
+| ID | Item | Status | Notes |
+|---|---|---|---|
+| S01 | Stems: Demucs htdemucs_6s offline, seeded | ✅ | |
+| S02 | Metadata extraction to project.yaml | ✅ | |
+| S03 | Forge via ai_charter, Beat This! + ADTOF | ✅ | |
+| S04 | Steady drums (repeat_similarity) and steady riffs (consolidate_pitched) | ✅ | |
