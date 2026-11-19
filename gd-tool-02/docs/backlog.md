@@ -48,6 +48,7 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | R37 | Guitar Pro 4 (.gp4) support, proven like GP5 | ✅ | every Guitar Pro test runs for .gp4 and .gp5; a real GP4 of Evil Papagali (2 guitars, bass, drums) filled all boxes, asked for the guitar, drove guitar / bass / drums |
 | R38 | A partial Guitar Pro tab (Lets Ride To Metal Land: 40 bars = 1:16 of a 4:46 song) charted nothing for guitar / bass | ⏸️ | Tried fitting short sheets in the engine (written tempo, covered span, song start); the owner rejected the result: "back to how it was". Reverted. Short sheets are now reported instead (R39) |
 | R39 | Popup when a Guitar Pro / MIDI sheet's music is much shorter than the song (< 70%): once per file | ✅ | sheets.music_seconds (beats at the written tempo; a chart's last note) in the .tracks cache; checkShortSheets / Overlay::Notice; remembered in sheets.short_warned |
+| R40 | Guitar Pro 6 (.gpx) support, proven like GP5 | ✅ | Every Guitar Pro test also runs on .gpx (tests/gpx_fixture.py writes score.gpif in a BCFZ-compressed BCFS package). A real GPX (Downloads/massacration-the_bull.gpx) found a bug: GP6 drum notes (kit Element + Variation) and vocal notes (Tone + Octave) read as empty. Fixed in the engine (GP6_DRUM_ELEMENTS, from alphaTab's PercussionMapper) and verified against alphaTab's full-song .gp5/.gpx pair: drums element by element, vocal and instrument pitches identical |
 
 ## Later
 

@@ -34,6 +34,8 @@ a step bar at the top (`Cmd/Ctrl+1..4`):
        guitars and no such name, the Guitar box shows a **track picker** and FORGE waits for
        your pick. The file is lined up once for every box (copies are matched by content).
        Guitar Pro 3-5 needs `pyguitarpro` (in `python/requirements.txt`); 6-8 are read without.
+       Tested formats: `.gp4`, `.gp5`, `.gpx` (Guitar Pro 6: drums as kit elements and vocals as
+       tones are read too), MIDI, `.chart` / notes.mid charts.
      - a sheet whose music is much shorter than the song (under 70%: only the intro and a
        verse, say) gets a popup when it is added: the forge most likely can't line it up, so
        look for a complete tab. The forge says how much of the song a sheet covered.

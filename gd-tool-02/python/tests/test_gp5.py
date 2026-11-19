@@ -1,6 +1,7 @@
-"""Guitar Pro 4 and 5 sheets (R31, R37): a real .gp4 / .gp5 written with pyguitarpro is read by
+"""Guitar Pro 4, 5 and 6 sheets (R31, R37, R40): a real .gp4 / .gp5 (pyguitarpro) or .gpx
+(gpx_fixture: score.gpif in a BCFZ-compressed BCFS package) is read by
 the engine, each instrument finds its own track, and the same file in several boxes is lined
-up once. Every test runs for both formats."""
+up once. Every test runs for every format."""
 
 import shutil
 import sys
@@ -21,7 +22,7 @@ BASS = [(0.0, 28), (1.0, 33), (2.0, 31), (3.0, 33)]
 DRUMS = [(0.0, 36), (1.0, 38), (2.0, 36), (3.0, 38), (0.0, 42), (1.0, 42), (2.0, 42), (3.0, 42)]
 
 
-@pytest.fixture(params=["gp5", "gp4"])
+@pytest.fixture(params=["gp5", "gp4", "gpx"])
 def fmt(request):
     return request.param
 
@@ -38,7 +39,7 @@ def test_the_engine_reads_every_track(gp5):
     assert set(tracks) == {"guitar", "bass", "drums"}
     assert sorted((n.beat, n.pitch) for n in tracks["guitar"].notes) == sorted(GUITAR)
     assert sorted((n.beat, n.pitch) for n in tracks["bass"].notes) == sorted(BASS)
-    assert tracks["drums"].drums and len(tracks["drums"].notes) == len(DRUMS)
+    assert tracks["drums"].drums and sorted((n.beat, n.pitch) for n in tracks["drums"].notes) == sorted(DRUMS)
 
 
 def test_song_home_takes_it_as_a_tab_and_each_box_finds_its_track(gp5):

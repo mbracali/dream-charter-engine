@@ -392,18 +392,53 @@ def _property(note, name: str, child: str) -> str | None:
     return note.findtext(f"Properties/Property[@name='{name}']/{child}")
 
 
+# Guitar Pro 6 (.gpx): uma nota de bateria é um "Element" (peça do kit embutido no programa) e uma
+# "Variation" (golpe), sem número MIDI no arquivo. Ordem dos elementos levantada pelo alphaTab
+# (CoderLine/alphaTab, PercussionMapper.ts) num arquivo de teste do GP6; aqui, cada golpe já no
+# número General MIDI que GM_DRUMS entende (bordas, abafados e meio-aberto viram o golpe comum).
+GP6_DRUM_ELEMENTS = (
+    (36, 36, 36),   # 0 bumbo
+    (38, 40, 37),   # 1 caixa (golpe, aro, side stick)
+    (56, 56, 56),   # 2 cowbell grave
+    (56, 56, 56),   # 3 cowbell médio
+    (56, 56, 56),   # 4 cowbell agudo
+    (41, 41, 41),   # 5 tom muito grave (surdo)
+    (45, 45, 45),   # 6 tom grave
+    (47, 47, 47),   # 7 tom médio
+    (48, 48, 48),   # 8 tom agudo
+    (50, 50, 50),   # 9 tom muito agudo
+    (42, 46, 46),   # 10 chimbal (fechado, meio, aberto)
+    (44, 44, 44),   # 11 chimbal no pedal
+    (57, 57, 57),   # 12 prato de ataque médio
+    (49, 49, 49),   # 13 prato de ataque agudo
+    (55, 55, 55),   # 14 splash
+    (51, 51, 53),   # 15 condução (meio, borda, cúpula)
+    (52, 52, 52),   # 16 china
+)
+
+
 def _note_pitch(note, tuning: list[int], drums: bool, articulations: list[int]) -> int | None:
     """Nota MIDI de uma nota do GPIF (na bateria, a peça no mapa General MIDI)."""
     if drums:
         articulation = note.findtext("InstrumentArticulation")
         if articulation is not None and articulation.strip().isdigit() and int(articulation) < len(articulations):
             return articulations[int(articulation)]
+        element = _property(note, "Element", "Element")   # Guitar Pro 6: peça do kit embutido
+        if element is not None and element.strip().isdigit():
+            element_index = int(element)
+            if element_index < len(GP6_DRUM_ELEMENTS):
+                variation = int((_property(note, "Variation", "Variation") or "0").strip() or 0)
+                return GP6_DRUM_ELEMENTS[element_index][variation if 0 <= variation < 3 else 0]
+            return 38   # elemento desconhecido: caixa (como o alphaTab)
     midi = _property(note, "Midi", "Number")
     if midi is not None and midi.strip().lstrip("-").isdigit():
         return int(midi)
     string, fret = _property(note, "String", "String"), _property(note, "Fret", "Fret")
     if string is not None and fret is not None and tuning and int(string) < len(tuning):
         return tuning[int(string)] + int(fret)   # cordas da mais grave (0) para a mais aguda
+    tone, octave = _property(note, "Tone", "Step"), _property(note, "Octave", "Number")   # GP6: voz, teclado
+    if tone is not None and octave is not None and tone.strip().isdigit() and octave.strip().lstrip("-").isdigit():
+        return 12 * int(octave) + int(tone)
     for kind in ("ConcertPitch", "TransposedPitch"):
         step = _property(note, kind, "Pitch/Step")
         if step:
@@ -445,8 +480,8 @@ def parse_gpif(xml: bytes) -> tuple[list[RefTrack], list[tuple[int, float, float
         channel = track.findtext("GeneralMidi/PrimaryChannel") or track.findtext(".//MidiConnection/PrimaryChannel")
         kit = (track.findtext("InstrumentSet/Type") or "").strip().lower()
         instrument = track.find("Instrument")
-        drums = (kit == "drumkit" or (channel or "").strip() == "9"
-                 or (instrument is not None and "drum" in (instrument.get("ref") or "").lower()))
+        ref = (instrument.get("ref") or "").lower() if instrument is not None else ""
+        drums = kit == "drumkit" or (channel or "").strip() == "9" or "drum" in ref or ref.startswith("drmkt")
         articulations = [int(a.findtext("OutputMidiNumber") or 0)
                          for a in track.findall("InstrumentSet/Elements/Element/Articulations/Articulation")]
         notes: list[RefNote] = []

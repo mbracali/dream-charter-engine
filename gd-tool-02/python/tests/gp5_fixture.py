@@ -56,6 +56,10 @@ def write_gp5(path: Path, guitar: list[tuple[float, int]], bpm: int = 140,
               version: tuple[int, int, int] | None = None) -> Path:
     """`guitar` / `bass` / `drums`: (beat from the start, MIDI pitch or GM drum note);
     `more_guitars`: other guitar tracks as (name, notes)."""
+    if path.suffix.lower() == ".gpx":  # Guitar Pro 6: written by gpx_fixture
+        from gpx_fixture import write_gpx
+
+        return write_gpx(path, guitar, bpm, bass=bass, drums=drums, guitar_name=guitar_name, more_guitars=more_guitars)
     extra = [n for _, notes in (more_guitars or []) for n in notes]
     beats = max([b for b, _ in guitar + (bass or []) + (drums or []) + extra] + [0.0])
     bars = int(beats // 4) + 1
