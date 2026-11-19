@@ -130,8 +130,9 @@ bool App::init(int argc, char** argv) {
         else if (a == "--forge") forgeAtStart_ = true;
         else if (a == "--selftest") selfTest_ = true;
         else if (a == "--paste" && i + 1 < argc) pasteAtStart_.push_back(argv[++i]);  // debug: paste into a box
-        else if (a == "--one-part") bandView_ = false;
-        else if (a == "--offset" && i + 1 < argc) overlayAtStart_ = std::string("offset:") + argv[++i];  // debug: sync popover  // Song forge: the single-part view
+        else if (a == "--one-part") forgeView_ = 1;      // Song forge: the single-part view
+        else if (a == "--difficulties") forgeView_ = 2;  // Song forge: one part, every difficulty
+        else if (a == "--offset" && i + 1 < argc) overlayAtStart_ = std::string("offset:") + argv[++i];  // debug: sync popover
         else if (a == "--panels") showPanels_ = true;   // Song forge: band view with the mixer and settings  // test the editor on the first project, then quit
         else if (a == "--overlay" && i + 1 < argc) overlayAtStart_ = argv[++i];  // details / lyrics / help
         else paths.push_back(a);
@@ -355,7 +356,8 @@ bool App::busy(const Project& p) const {
 
 std::string App::projectState(const Project& p) const {
     if (active_ && fs::equivalent(active_->dir, p.dir, ec_)) {
-        const char* what = active_->kind == JobKind::Metadata ? "reading the song" : active_->kind == JobKind::Forge ? "forging" : "exporting";
+        const char* what = active_->kind == JobKind::Metadata ? "reading the song" : active_->kind == JobKind::Forge ? "forging"
+                           : active_->kind == JobKind::Inspect ? "reading a sheet" : "exporting";
         return std::string(what) + (jobProgress_ >= 0 ? " " + std::to_string(int(jobProgress_ * 100)) + "%" : "...");
     }
     if (busy(p)) return "queued";
@@ -464,6 +466,8 @@ void App::startNextJob() {
         if (p->id == chartFor_) saveChart();
         argv.insert(argv.end(), {(toolRoot() / "python" / "forge.py").string(), p->dir.string(), "--mode", mode_});
         if (p->id == stemsFor_ && countStems(p->stemsDir()) == 0) player_.clear();
+    } else if (job.kind == JobKind::Inspect) {
+        argv.insert(argv.end(), {(toolRoot() / "python" / "inspect_sheet.py").string(), p->dir.string()});
     } else {
         argv.insert(argv.end(), {(toolRoot() / "python" / "export_song.py").string(), p->dir.string()});
     }
@@ -479,6 +483,8 @@ void App::startNextJob() {
     jobProgress_ = -1;
     busySince_ = SDL_GetTicks();
     if (job.kind == JobKind::Export) exported_.clear();
+    jobFilled_.clear();
+    jobChoose_.clear();
     logEvent(std::string("job start ") + (job.kind == JobKind::Metadata ? "metadata" : job.kind == JobKind::Forge ? "forge" : "export") +
              ": " + p->id);
 }
@@ -496,7 +502,7 @@ void App::pumpWorker() {
             jobProgress_ = std::clamp(float(std::atof(line.c_str() + 9)), 0.f, 1.f);
         } else if (line.rfind("STEM ", 0) == 0) {
             auto sp = line.find(' ', 5);
-            if (sp != std::string::npos && p && p->id == stemsFor_) {
+            if (sp != std::string::npos && p && p->id == stemsFor_ && line.substr(5, sp - 5) != "keys") {
                 const std::string stem = line.substr(5, sp - 5);
                 std::string error;
                 if (!player_.has(stem) && !player_.add(stem, line.substr(sp + 1), error)) logEvent("stem " + stem + " FAILED: " + error);
@@ -509,6 +515,10 @@ void App::pumpWorker() {
             p->dirty = true;
             saveProject(*p);
             p->stemCount = countStems(p->stemsDir());
+        } else if (line.rfind("FILLED ", 0) == 0) {
+            jobFilled_ = line.substr(7);
+        } else if (line.rfind("CHOOSE ", 0) == 0) {
+            jobChoose_ += (jobChoose_.empty() ? "" : ",") + line.substr(7);
         } else if (line.rfind("EXPORTED ", 0) == 0) {
             exported_.push_back(line.substr(9));
         } else if (line.rfind("ERROR ", 0) == 0) {
@@ -552,9 +562,26 @@ void App::finishJob(const Job& job, bool ok) {
             undo_.clear();
             redo_.clear();
             loadChart(*p);
-            if (stemsFor_ != p->id || player_.empty()) loadStems(*p);
+            loadStems(*p);  // fresh: keys go back inside the rest of the mix
         }
         status_ = ok ? p->title() + ": forged in " + secs + ". Preview it, then Fine tuning." : p->title() + ": forging failed - " + jobError_;
+    } else if (job.kind == JobKind::Inspect) {
+        const std::string name = job.label;
+        std::string msg = ok ? name + " read." : name + ": " + jobError_;
+        if (ok && !jobFilled_.empty()) msg = name + " also fills: " + jobFilled_ + " (it has those instruments).";
+        if (ok && jobChoose_.find("guitar") != std::string::npos)
+            msg += " It has several guitars: pick the one to chart in the Guitar box.";
+        status_ = msg;
+        // A box that lists the files it uses gets the new one too.
+        std::istringstream boxes(jobFilled_);
+        std::string box;
+        while (std::getline(boxes, box, ',')) {
+            setValue(*p, "sheets", box + "_absent", "");  // the score has this instrument after all
+            const std::string use = p->doc.get("sheets", box + "_use");
+            if (use == "none") setValue(*p, "sheets", box + "_use", name);
+            else if (!use.empty() && ("|" + use + "|").find("|" + name + "|") == std::string::npos)
+                setValue(*p, "sheets", box + "_use", use + "|" + name);
+        }
     } else {
         if (ok) {
             p->doc.set("export", "exported_at", nowIso());
@@ -631,7 +658,6 @@ void App::setScreen(Screen s) {
         auto parts = chartParts();
         if (std::find(parts.begin(), parts.end(), tunePart_) == parts.end() && !parts.empty()) tunePart_ = parts[0];
     }
-    if (s != Screen::Forge && listenPart_) player_.setAllMuted(false, true);
 }
 
 void App::loadStems(const Project& p) {
@@ -640,12 +666,25 @@ void App::loadStems(const Project& p) {
     player_.setOffset(std::atof(p.doc.get("forge", "audio_offset_ms").c_str()) / 1000.0);
     std::error_code ec;
     std::vector<fs::path> files;
-    for (auto& e : fs::directory_iterator(p.stemsDir(), ec))
-        if (e.path().extension() == ".wav") files.push_back(e.path());
+    fs::path keys;
+    for (auto& e : fs::directory_iterator(p.stemsDir(), ec)) {
+        if (e.path().extension() != ".wav") continue;
+        if (e.path().stem() == "keys") keys = e.path();
+        else files.push_back(e.path());
+    }
     std::sort(files.begin(), files.end());
     for (auto& f : files) {
         std::string error;
         if (!player_.add(f.stem().string(), f.string(), error)) logEvent("stem " + f.string() + " FAILED: " + error);
+    }
+    // Keys are never charted: an older project's keys.wav plays inside "other" (R36).
+    if (!keys.empty()) {
+        std::string error;
+        if (player_.has("other")) {
+            if (!player_.mixInto("other", keys.string(), error)) logEvent("keys into other FAILED: " + error);
+        } else if (!player_.add("other", keys.string(), error)) {
+            logEvent("keys FAILED: " + error);
+        }
     }
 }
 

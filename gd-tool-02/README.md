@@ -27,10 +27,13 @@ a step bar at the top (`Cmd/Ctrl+1..4`):
        be made for this audio: no offset search yet);
      - a chord sheet alone (`.txt`, Cifra Club / Ultimate Guitar style): the forge listens to
        the stem and uses only those chords; its lyrics are sung when nothing else gives lyrics;
-     - a file in several boxes (a full Guitar Pro score in Guitar, Bass and Drums) is aligned
-       once (copies are matched by content), and each box takes its own track: drop one
-       `.gp5` in every box and it drives every part. Guitar Pro 3-5 (`.gp3 .gp4 .gp5`) needs
-       `pyguitarpro` (in `python/requirements.txt`); `.gpx` / `.gp` 6-8 are read without it.
+     - **one score fills the band**: add a Guitar Pro (`.gp3 .gp4 .gp5 .gpx .gp`) or MIDI
+       score (or a chart) to any box and the app reads its tracks (`python/inspect_sheet.py`)
+       and puts it in every box it has an instrument for (clearing that box's "no ..." tick).
+       Each box uses ONE track: guitar prefers the solo / lead track by its name; with several
+       guitars and no such name, the Guitar box shows a **track picker** and FORGE waits for
+       your pick. The file is lined up once for every box (copies are matched by content).
+       Guitar Pro 3-5 needs `pyguitarpro` (in `python/requirements.txt`); 6-8 are read without.
    - **Drums** come from the drums stem (ADTOF); a drum sheet is optional, and a drum text tab
      alone can't be lined up yet. **This song has no drums** leaves them out.
    - **Keys are never charted** (the keys stem is only audio, mixed into `song.ogg`).
@@ -39,14 +42,18 @@ a step bar at the top (`Cmd/Ctrl+1..4`):
    - **FORGE SONG** goes on.
 2. **Song forge** (`python/forge.py`): separates the stems if needed (Demucs, offline),
    then charts every part with dream-charter-engine (`ai_charter`) and the sheets. The
-   record spins with a progress bar. Then the **Band** view: the vocals across the top and
+   record spins with a progress bar. Three views: **Band**, **One part** (one big highway) and
+   **Difficulties** (one part's Easy..Expert side by side). The **Band** view: the vocals across the top and
    every instrument's highway side by side (guitar, bass, drums), all on one playhead,
    Easy..Expert. Over each part: a checkbox for its sound, and **Chart offset** (sync): shift
    that part's chart (its notes really move, every difficulty) or the **whole song audio**
    against every chart (Export pads / trims the audio), by -100 .. +100 ms steps or
    Left / Right; offsets are kept across forges and undo. **Rest of the mix** turns on / off the
    stems no part uses (other, keys, absent parts). The vocals show only when the song has
-   lyrics. The bottom bar has the app's own **Volume** (independent of the system volume). **Mixer** shows the stems mixer (mute / solo / waveforms) and the forge
+   lyrics. The bottom bar has the app's own **Volume** (independent of the system volume).
+   **Mixer** shows the stems (mute / solo / waveforms) beside the charts. Keys and "other"
+   are one stem, **rest** (the rest of the mix): keys are never charted or separated. The
+   forge settings panel is gone; the forge uses its tuned defaults. **Mixer** shows the stems mixer (mute / solo / waveforms) and the forge
    settings beside it; **One part** shows a single big highway instead. The settings:
    - **Rules**: the engine's genre presets (`ai_charter/genres/`);
    - **Drums**: Heard 0.9 / **Steady** 0.8 / Locked 0.7 (engine `repeat_similarity`: bars at

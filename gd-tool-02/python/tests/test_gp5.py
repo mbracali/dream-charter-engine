@@ -1,5 +1,6 @@
-"""Guitar Pro 5 sheets (R31): a real .gp5 written with pyguitarpro is read by the engine,
-each instrument finds its own track, and the same file in several boxes is lined up once."""
+"""Guitar Pro 4 and 5 sheets (R31, R37): a real .gp4 / .gp5 written with pyguitarpro is read by
+the engine, each instrument finds its own track, and the same file in several boxes is lined
+up once. Every test runs for both formats."""
 
 import shutil
 import sys
@@ -20,9 +21,14 @@ BASS = [(0.0, 28), (1.0, 33), (2.0, 31), (3.0, 33)]
 DRUMS = [(0.0, 36), (1.0, 38), (2.0, 36), (3.0, 38), (0.0, 42), (1.0, 42), (2.0, 42), (3.0, 42)]
 
 
+@pytest.fixture(params=["gp5", "gp4"])
+def fmt(request):
+    return request.param
+
+
 @pytest.fixture
-def gp5(tmp_path):
-    return write_gp5(tmp_path / "song.gp5", GUITAR, 140, bass=BASS, drums=DRUMS)
+def gp5(tmp_path, fmt):
+    return write_gp5(tmp_path / f"song.{fmt}", GUITAR, 140, bass=BASS, drums=DRUMS)
 
 
 def test_the_engine_reads_every_track(gp5):
@@ -45,7 +51,7 @@ def test_song_home_takes_it_as_a_tab_and_each_box_finds_its_track(gp5):
 def test_one_file_in_every_box_drives_every_part(tmp_path, gp5):
     for box in ("guitar", "bass", "drums"):
         (tmp_path / "sheets" / box).mkdir(parents=True)
-        shutil.copy(gp5, tmp_path / "sheets" / box / "song.gp5")
+        shutil.copy(gp5, tmp_path / "sheets" / box / gp5.name)
     (tmp_path / "forge").mkdir()
     plan = forge.Plan(tmp_path, {"sheets": {}})
     assert set(plan.refs) == {"guitar", "bass", "drums"} and set(plan.fidelity.values()) == {"seguir"}
@@ -63,9 +69,46 @@ def test_copies_of_one_file_are_lined_up_once(monkeypatch, tmp_path, gp5):
     copies = {}
     for box in ("guitar", "drums"):
         (tmp_path / box).mkdir()
-        copies[box] = Path(shutil.copy(gp5, tmp_path / box / "song.gp5"))
+        copies[box] = Path(shutil.copy(gp5, tmp_path / box / gp5.name))
     monkeypatch.setattr(reference, "load_guides", fake_load_guides)
     forge.install_references(copies)
     guides = reference.load_guides(None, None, None, 0, None, None, log=lambda m: None)
     assert len(calls) == 1 and set(calls[0].values()) == {"guitar", "drums"}
     assert set(guides) == {"guitar", "drums"}
+
+
+def test_one_file_fills_every_box_it_has_an_instrument_for(tmp_path, gp5):
+    import inspect_sheet
+
+    (tmp_path / "sheets" / "guitar").mkdir(parents=True)
+    shutil.copy(gp5, tmp_path / "sheets" / "guitar" / gp5.name)
+    filled = inspect_sheet.inspect(tmp_path, "guitar", gp5.name)
+    assert sorted(filled) == ["bass", "drums"]
+    assert (tmp_path / "sheets" / "bass" / gp5.name).exists() and (tmp_path / "sheets" / "drums" / gp5.name).exists()
+    cache = (tmp_path / "sheets" / ".tracks" / f"{gp5.name}.tsv").read_text().splitlines()
+    assert any(l.startswith("#default\tguitar\t") and l.endswith("\t1") for l in cache)
+
+
+def test_a_guitar_only_file_fills_only_the_guitar(tmp_path, fmt):
+    import inspect_sheet
+
+    (tmp_path / "sheets" / "drums").mkdir(parents=True)
+    write_gp5(tmp_path / "sheets" / "drums" / f"riff.{fmt}", GUITAR)  # dropped on Drums by mistake
+    assert inspect_sheet.inspect(tmp_path, "drums", f"riff.{fmt}") == ["guitar"]
+
+
+def test_the_solo_guitar_wins_and_unclear_guitars_ask(tmp_path, fmt):
+    rhythm = [(b, 40) for b in (0.0, 1.0, 2.0, 3.0)]
+    named = write_gp5(tmp_path / f"named.{fmt}", rhythm, guitar_name="Rhythm Guitar", more_guitars=[("Lead Guitar", GUITAR)])
+    tracks = sheets.score_tracks(named)
+    lead = next(t["index"] for t in tracks if t["name"] == "Lead Guitar")
+    assert sheets.default_track(tracks, "guitar") == (lead, True)
+    assert sheets.pick_tracks(named, "guitar") == {lead: "guitar"}
+
+    unclear = write_gp5(tmp_path / f"unclear.{fmt}", rhythm, guitar_name="Distortion Guitar", more_guitars=[("Clean Guitar", GUITAR)])
+    tracks = sheets.score_tracks(unclear)
+    index, sure = sheets.default_track(tracks, "guitar")
+    assert not sure
+    other = next(t["index"] for t in tracks if t["index"] != index and t["guess"] == "guitar")
+    assert sheets.pick_tracks(unclear, "guitar", chosen=other) == {other: "guitar"}  # the user's pick wins
+    assert sheets.chosen_track({"sheets": {"guitar_track": f"unclear.{fmt}#{other}"}}, "guitar", f"unclear.{fmt}") == other

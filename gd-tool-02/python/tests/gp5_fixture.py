@@ -1,4 +1,4 @@
-"""Writes real Guitar Pro 5 files for the tests (pyguitarpro's writer): a guitar track (and
+"""Writes real Guitar Pro 4 / 5 files for the tests (pyguitarpro's writer): a guitar track (and
 optionally a bass and a drum track) from (beat, MIDI pitch) notes on a 16th-note grid."""
 
 from __future__ import annotations
@@ -50,15 +50,21 @@ def _fill(track, notes: list[tuple[float, int]], bars: int, tuning: list[int] | 
 
 
 def write_gp5(path: Path, guitar: list[tuple[float, int]], bpm: int = 140,
-              bass: list[tuple[float, int]] | None = None, drums: list[tuple[float, int]] | None = None) -> Path:
-    """`guitar` / `bass` / `drums`: (beat from the start, MIDI pitch or GM drum note)."""
-    beats = max([b for b, _ in guitar + (bass or []) + (drums or [])] + [0.0])
+              bass: list[tuple[float, int]] | None = None, drums: list[tuple[float, int]] | None = None,
+              guitar_name: str = "Distortion Guitar",
+              more_guitars: list[tuple[str, list[tuple[float, int]]]] | None = None,
+              version: tuple[int, int, int] | None = None) -> Path:
+    """`guitar` / `bass` / `drums`: (beat from the start, MIDI pitch or GM drum note);
+    `more_guitars`: other guitar tracks as (name, notes)."""
+    extra = [n for _, notes in (more_guitars or []) for n in notes]
+    beats = max([b for b, _ in guitar + (bass or []) + (drums or []) + extra] + [0.0])
     bars = int(beats // 4) + 1
     song = gp.Song()
     song.tempo = bpm
     for _ in range(bars - 1):
         song.addMeasureHeader(gp.MeasureHeader())
-    tracks = [("Distortion Guitar", GUITAR, guitar, False, 30)]
+    tracks = [(guitar_name, GUITAR, guitar, False, 30)]
+    tracks += [(name, GUITAR, notes, False, 30) for name, notes in (more_guitars or [])]
     if bass:
         tracks.append(("Bass", BASS, bass, False, 33))
     if drums:
@@ -80,5 +86,7 @@ def write_gp5(path: Path, guitar: list[tuple[float, int]], bpm: int = 140,
             track.channel.channel = 9
             track.channel.effectChannel = 9
         _fill(track, notes, bars, tuning, is_drums)
-    gp.write(song, str(path), version=(5, 1, 0))
+    # The file's extension picks the format: .gp5 (Guitar Pro 5) or .gp4 (Guitar Pro 4).
+    version = version or ((4, 0, 6) if path.suffix.lower() == ".gp4" else (5, 1, 0))
+    gp.write(song, str(path), version=version)
     return path

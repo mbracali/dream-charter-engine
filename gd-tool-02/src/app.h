@@ -22,6 +22,7 @@
 #include <deque>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -89,7 +90,7 @@ struct Menu {
 };
 
 enum class Screen { Home, Forge, Tune, Export };
-enum class JobKind { Metadata, Forge, Export };
+enum class JobKind { Metadata, Forge, Export, Inspect };
 enum class DialogKind { Song, ProjectsDir, CloneHeroDir, YargDir, Sheet };
 enum class Overlay { None, Details, Lyrics, Paste, Help, About };
 enum class Focus { None, Field, Editor, VocalLyric };
@@ -124,6 +125,19 @@ inline const BoxDef kBoxes[] = {{"guitar", "Guitar", "tab, MIDI, chords or chart
                                 {"bass", "Bass", "tab, MIDI, chords or chart"},
                                 {"drums", "Drums", "drum tab, MIDI or chart"},
                                 {"lyrics", "Lyrics", ".txt / .lrc"}};
+
+// A track of a Guitar Pro / MIDI score (or a chart's part), from the cache python/inspect_sheet.py
+// writes in PROJECT/sheets/.tracks/<file>.tsv.
+struct ScoreTrack {
+    int index = 0, notes = 0;
+    std::string guess, name;
+    bool drums = false;
+};
+struct ScoreTracks {
+    bool known = false;  // the cache exists (the file was read)
+    std::vector<ScoreTrack> tracks;
+    std::map<std::string, std::pair<int, bool>> defaults;  // box -> (track, sure)
+};
 
 struct SheetFile {
     std::string name, kind;  // kind: tab, score, chart, chords, lyrics, "" (not usable)
@@ -268,13 +282,17 @@ public:
     bool partAbsent(const Project& p, const std::string& box) const;
     bool hasSheet(const Project& p, const std::string& box) const;
     std::string forgeBlocker(const Project& p) const;
+    ScoreTracks scoreTracks(const Project& p, const std::string& file) const;
+    std::vector<ScoreTrack> trackChoices(const ScoreTracks& st, const std::string& box) const;
+    int chosenTrack(const Project& p, const std::string& box, const std::string& file) const;  // -1: none
+    void inspectSheet(Project& p, const std::string& box, const std::string& name);
     void forgeSong();
 
     // ---- Song forge (screen_forge.cpp) ----------------------------------------------------
     void drawForgeScreen(Project& p, const SDL_FRect& r);
     void drawForgeProgress(Project& p, const SDL_FRect& r);
     void drawMixer(const SDL_FRect& r);
-    void drawForgeSettings(Project& p, const SDL_FRect& r);
+    void drawDifficulties(const SDL_FRect& r);
     void drawPreview(Project& p, const SDL_FRect& r);
     void drawBandView(const SDL_FRect& r);
     // Sync (R27): a part's chart moves (its notes really shift), or the song's audio moves
@@ -354,6 +372,7 @@ public:
     float jobProgress_ = -1;  // -1: unknown
     Uint64 busySince_ = 0;
     std::vector<std::string> exported_;  // folders of the last export
+    std::string jobFilled_, jobChoose_;  // Inspect: the boxes a score filled, the ones that need a pick
 
     StemPlayer player_;
     std::string stemsFor_;
@@ -370,8 +389,7 @@ public:
     bool chartDirty_ = false;
     std::string previewPart_ = "guitar";
     int previewDiff_ = 3;  // Expert
-    bool listenPart_ = false;
-    bool bandView_ = true;     // Song forge: every part at once (else one big highway)
+    int forgeView_ = 0;        // Song forge: 0 the band, 1 one part, 2 one part's difficulties side by side
     bool showPanels_ = false;  // Song forge, band view: the mixer and settings beside it
     std::string offsetPart_;   // the part whose sync popover is open ("" closed)
     int offsetMode_ = 0;       // 0 this chart, 1 the song (audio)

@@ -88,6 +88,45 @@ bool StemPlayer::add(const std::string& name, const std::string& path, std::stri
     return true;
 }
 
+bool StemPlayer::mixInto(const std::string& name, const std::string& path, std::string& error) {
+    Stem* target = nullptr;
+    for (auto& s : stems_)
+        if (s->name == name) target = s.get();
+    if (!target) {
+        error = name + " is not loaded";
+        return false;
+    }
+    SDL_AudioSpec spec;
+    Uint8* buf = nullptr;
+    Uint32 len = 0;
+    if (!SDL_LoadWAV(path.c_str(), &spec, &buf, &len)) {
+        error = SDL_GetError();
+        return false;
+    }
+    Uint8* conv = nullptr;
+    int convLen = 0;
+    const bool ok = SDL_ConvertAudioSamples(&spec, buf, int(len), &target->spec, &conv, &convLen);
+    SDL_free(buf);
+    if (!ok) {
+        error = SDL_GetError();
+        return false;
+    }
+    const auto* add = reinterpret_cast<const int16_t*>(conv);
+    const size_t n = std::min(target->pcm.size(), size_t(convLen) / 2);
+    for (size_t i = 0; i < n; ++i)
+        target->pcm[i] = int16_t(std::clamp(int(target->pcm[i]) + int(add[i]), -32768, 32767));
+    SDL_free(conv);
+    // The waveform summary again.
+    const size_t ch = size_t(target->spec.channels), frames = target->pcm.size() / ch;
+    std::fill(target->peaks.begin(), target->peaks.end(), 0.f);
+    for (size_t f = 0; f < frames; ++f) {
+        float& p = target->peaks[f * target->peaks.size() / std::max<size_t>(frames, 1)];
+        for (size_t c = 0; c < ch; ++c) p = std::max(p, std::fabs(float(target->pcm[f * ch + c]) / 32768.f));
+    }
+    refill(playing_ ? playhead() : position_);
+    return true;
+}
+
 void StemPlayer::clear() {
     playing_ = false;
     if (device_) SDL_PauseAudioDevice(device_);

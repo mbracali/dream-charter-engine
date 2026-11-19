@@ -80,33 +80,68 @@ def lyrics_text(path: Path) -> str:
 
 # ---- references: which score track guides which instrument -------------------------
 
-def pick_tracks(path: Path, instrument: str) -> dict[int, str]:
-    """{track index: instrument} for the tracks of a tab/score that fit `instrument`:
-    the engine's own guess first, then the best candidate (drum tracks for drums; for
-    bass the lowest pitched track, for guitar the busiest non-bass one)."""
-    from ai_charter.reference import default_mapping, read_score
+SOLO = re.compile(r"solo|lead|solista|principal|guitar ?1\b|gtr ?1\b", re.I)
 
-    score = read_score(path)
-    guess = {i: inst for i, inst in default_mapping(score).items() if inst == instrument}
-    if guess:
-        return guess
-    tracks = [t for t in score.tracks if t.notes]
-    if instrument == "drums":
-        drums = [t for t in tracks if getattr(t, "drums", False)]
-        return {drums[0].index: "drums"} if drums else {}
-    pitched = [t for t in tracks if not getattr(t, "drums", False)]
-    if not pitched:
-        return {}
 
-    def mean_pitch(t) -> float:
-        return sum(n.pitch for n in t.notes) / len(t.notes)
+def score_tracks(path: Path) -> list[dict]:
+    """The tracks of a tab / score with notes: index, name, guess (guitar, bass, drums, ...),
+    notes, drums. For a chart (PART tracks), one entry per part."""
+    if kind_of(path, "guitar") == "chart":
+        chart = read_chart_file(path) if path.suffix.lower() == ".chart" else midi_to_chart(path)
+        return [{"index": i, "name": p, "guess": p, "notes": len(chart.part(p, 3)), "drums": p == "drums"}
+                for i, p in enumerate(chart.parts())]
+    from ai_charter.reference import read_score
 
-    if instrument == "bass":
-        best = min(pitched, key=mean_pitch)
-    else:
-        candidates = [t for t in pitched if t.guess != "bass"] or pitched
-        best = max(candidates, key=lambda t: len(t.notes))
-    return {best.index: instrument}
+    return [{"index": t.index, "name": t.name, "guess": "drums" if t.drums else t.guess, "notes": len(t.notes),
+             "drums": t.drums} for t in read_score(path).tracks if t.notes]
+
+
+def candidates(tracks: list[dict], instrument: str) -> list[dict]:
+    """The tracks that can play `instrument`, busiest first."""
+    out = [t for t in tracks if (t["drums"] if instrument == "drums" else (t["guess"] == instrument and not t["drums"]))]
+    return sorted(out, key=lambda t: -t["notes"])
+
+
+def default_track(tracks: list[dict], instrument: str) -> tuple[int | None, bool]:
+    """(track index, sure) for an instrument. Guitar: the solo / lead track when its name says
+    so, the only guitar when there is one; with several and no hint, not sure (the user picks:
+    the busiest is the fallback). Bass and drums: the busiest track."""
+    found = candidates(tracks, instrument)
+    if not found:
+        return None, True
+    if instrument != "guitar" or len(found) == 1:
+        return found[0]["index"], True
+    solo = [t for t in found if SOLO.search(t["name"])]
+    if len(solo) == 1:
+        return solo[0]["index"], True
+    return found[0]["index"], False
+
+
+def pick_tracks(path: Path, instrument: str, chosen: int | None = None) -> dict[int, str]:
+    """{track index: instrument}: ONE track of the tab / score for `instrument`: the one the
+    user chose (Song home), else default_track."""
+    tracks = score_tracks(path)
+    if chosen is not None and any(t["index"] == chosen for t in tracks):
+        return {chosen: instrument}
+    index, _ = default_track(tracks, instrument)
+    if index is None and instrument != "drums":  # nothing named for it: the busiest pitched track
+        pitched = [t for t in tracks if not t["drums"] and (instrument != "guitar" or t["guess"] != "bass")]
+        if instrument == "bass" and pitched:
+            from ai_charter.reference import read_score
+
+            low = {t.index: sum(n.pitch for n in t.notes) / len(t.notes) for t in read_score(path).tracks if t.notes}
+            index = min(pitched, key=lambda t: low.get(t["index"], 99))["index"]
+        elif pitched:
+            index = max(pitched, key=lambda t: t["notes"])["index"]
+    return {index: instrument} if index is not None else {}
+
+
+def chosen_track(doc: dict, box: str, file_name: str) -> int | None:
+    """The track the user picked for this file in this box (project.yaml sheets.<box>_track =
+    "file name#index"), or None."""
+    value = str((doc.get("sheets") or {}).get(f"{box}_track") or "")
+    name, _, index = value.rpartition("#")
+    return int(index) if name == file_name and index.isdigit() else None
 
 
 # ---- existing charts ----------------------------------------------------------------

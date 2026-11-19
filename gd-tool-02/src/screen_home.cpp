@@ -163,6 +163,50 @@ void App::addSheet(Project& p, const std::string& box, const fs::path& file) {
     }
     status_ = name + " added to " + box + " (" + kindLabel(kind) + ").";
     logEvent("sheet " + box + ": " + name + " (" + kind + ")");
+    if (kind == "tab" || kind == "score" || kind == "chart") inspectSheet(p, box, name);  // R32
+}
+
+// Reads a score's tracks (python/inspect_sheet.py), which also copies it into every box it has
+// an instrument for.
+void App::inspectSheet(Project& p, const std::string& box, const std::string& name) {
+    for (auto& j : jobs_)
+        if (j.kind == JobKind::Inspect && j.label == name && fs::equivalent(j.dir, p.dir, ec_)) return;
+    if (active_ && active_->kind == JobKind::Inspect && active_->label == name) return;
+    jobs_.push_back({p.dir, JobKind::Inspect, {box, name}, name});
+}
+
+ScoreTracks App::scoreTracks(const Project& p, const std::string& file) const {
+    ScoreTracks out;
+    std::ifstream in(p.dir / "sheets" / ".tracks" / (file + ".tsv"));
+    if (!in) return out;
+    out.known = true;
+    std::string line;
+    while (std::getline(in, line)) {
+        std::vector<std::string> f;
+        std::istringstream ss(line);
+        std::string cell;
+        while (std::getline(ss, cell, '\t')) f.push_back(cell);
+        if (f.size() >= 4 && f[0] == "#default") {
+            out.defaults[f[1]] = {std::atoi(f[2].c_str()), f[3] == "1"};
+        } else if (f.size() >= 5) {
+            out.tracks.push_back({std::atoi(f[0].c_str()), std::atoi(f[2].c_str()), f[1], f[4], f[3] == "1"});
+        }
+    }
+    return out;
+}
+
+std::vector<ScoreTrack> App::trackChoices(const ScoreTracks& st, const std::string& box) const {
+    std::vector<ScoreTrack> out;
+    for (auto& t : st.tracks)
+        if (box == "drums" ? t.drums : (!t.drums && t.guess == box)) out.push_back(t);
+    return out;
+}
+
+int App::chosenTrack(const Project& p, const std::string& box, const std::string& file) const {
+    const std::string v = p.doc.get("sheets", box + "_track");
+    const size_t hash = v.rfind('#');
+    if (hash == std::string::npos || v.substr(0, hash) != file) return -1;
+    return std::atoi(v.c_str() + hash + 1);
 }
 
 // Paste on a box: a copied file (Finder / file manager), a pasted path, or text: a text tab
@@ -325,6 +369,20 @@ bool App::hasSheet(const Project& p, const std::string& box) const {
 
 // Why FORGE can't run yet ("" when it can).
 std::string App::forgeBlocker(const Project& p) const {
+    if (jobFor(p, JobKind::Inspect)) return "Reading a sheet...";
+    for (const char* box : {"guitar", "bass", "drums"}) {
+        if (partAbsent(p, box)) continue;
+        for (auto& f : sheetFiles(p, box)) {
+            if (!f.used || (f.kind != "tab" && f.kind != "score")) continue;
+            const ScoreTracks st = scoreTracks(p, f.name);
+            if (!st.known) continue;
+            const auto choices = trackChoices(st, box);
+            if (choices.empty()) return f.name + " has no " + std::string(box) + " track: untick it in the " + box + " box.";
+            auto d = st.defaults.find(box);
+            if (choices.size() > 1 && d != st.defaults.end() && !d->second.second && chosenTrack(p, box, f.name) < 0)
+                return std::string("Pick which ") + box + " track of " + f.name + " to chart (in the " + box + " box).";
+        }
+    }
     std::vector<std::string> missing;
     for (const char* box : {"guitar", "bass"})
         if (!partAbsent(p, box) && !hasSheet(p, box)) missing.push_back(box);
@@ -415,6 +473,7 @@ void App::drawHome(Project& p, const SDL_FRect& r) {
     bigButton({r.x + (r.w - fw) / 2, fy, fw, fh}, label, [this] { forgeSong(); }, (!busy(p) || forging) && (blocker.empty() || forging));
     // What happens (right of the button).
     std::string note = forging ? "Running: see Song forge." : !blocker.empty() ? blocker : !p.forged() ? "Stems, then charts: a few minutes."
+                       : p.doc.get("forge", "forged_with") != forgeSignature(p) ? "Sheets changed since the last forge: forge again."
                        : tuned ? "Replaces your fine tuning." : "Forged " + p.doc.get("forge", "forged_at").substr(0, 10) + ".";
     const float nx = r.x + (r.w + fw) / 2 + 20 * u_;
     const float nw = r.x + r.w - nx;
@@ -474,10 +533,60 @@ void App::drawBox(Project& p, const BoxDef& def, const SDL_FRect& r) {
         if (!f.kind.empty()) hit({row.x, row.y, row.w - 34 * u_, row.h}, [this, box, name](float, float) {
                 if (Project* q = currentProject()) toggleSheet(*q, box, name);
             });
-        const std::string kl = kindLabel(f.kind);
-        const float kw = textW(kl, 1.25f * u_);
+        std::string kl = kindLabel(f.kind);
+        SDL_Color kc = f.kind.empty() ? kOxblood : f.kind == "chart" ? kSand : kDim;
+        bool chip = false;  // several tracks for this box: a picker (R33)
+        std::vector<ScoreTrack> choices;
+        int current = -1;
+        bool unsure = false;
+        if (f.kind == "tab" || f.kind == "score" || f.kind == "chart") {
+            const ScoreTracks st = scoreTracks(p, f.name);
+            if (!st.known) {
+                kl = "reading...";
+                if (!jobFor(p, JobKind::Inspect)) inspectSheet(p, box, f.name);  // added before R32
+            } else {
+                choices = trackChoices(st, box);
+                auto d = st.defaults.find(box);
+                current = chosenTrack(p, box, f.name);
+                unsure = d != st.defaults.end() && !d->second.second && current < 0;
+                if (current < 0 && d != st.defaults.end()) current = d->second.first;
+                if (choices.empty()) {
+                    kl = "no " + box + " track";
+                    kc = kOxblood;
+                } else if (choices.size() > 1 && f.kind != "chart") {
+                    chip = true;
+                    kl = unsure ? "choose the " + box + " track" : "track: " + [&] {
+                        for (auto& t : choices)
+                            if (t.index == current) return t.name;
+                        return choices[0].name;
+                    }();
+                } else if (choices.size() == 1 && f.kind != "chart") {
+                    kl += ": " + choices[0].name;
+                }
+            }
+        }
+        const float kw = std::min(textW(kl, 1.25f * u_) + (chip ? 28 * u_ : 0), row.w * 0.5f);
         text(cb.x + 26 * u_, row.y + (row.h - 12 * u_) / 2, f.name, f.used ? kCream : kMuted, 1.5f * u_, row.w - kw - 150 * u_);
-        text(row.x + row.w - kw - 40 * u_, row.y + (row.h - 10 * u_) / 2, kl, f.kind.empty() ? kOxblood : f.kind == "chart" ? kSand : kDim, 1.25f * u_);
+        if (chip) {
+            SDL_FRect pick{row.x + row.w - kw - 40 * u_, row.y + 2 * u_, kw, row.h - 4 * u_};
+            fill(pick, unsure ? kOxblood : hovered(pick) ? kHover : kInk);
+            frame(pick, unsure ? kOxblood : kMuted);
+            text(pick.x + 8 * u_, pick.y + (pick.h - 10 * u_) / 2, kl, kCream, 1.25f * u_, pick.w - 26 * u_);
+            shape::triangle(renderer_, {pick.x + pick.w - 16 * u_, pick.y + pick.h / 2 - 2 * u_}, {pick.x + pick.w - 8 * u_, pick.y + pick.h / 2 - 2 * u_},
+                            {pick.x + pick.w - 12 * u_, pick.y + pick.h / 2 + 3 * u_}, shape::fcolor(kDim));
+            hit(pick, [this, box, name, choices, current, pick](float, float) {
+                std::vector<DropItem> items;
+                for (auto& t : choices) {
+                    const std::string value = name + "#" + std::to_string(t.index);
+                    items.push_back({t.name, std::to_string(t.notes) + " notes", stemColor(box), true, t.index == current, [this, box, value] {
+                                         if (Project* q = currentProject()) setValue(*q, "sheets", box + "_track", value);
+                                     }});
+                }
+                openDropdown(pick, items);
+            });
+        } else {
+            text(row.x + row.w - kw - 40 * u_, row.y + (row.h - 10 * u_) / 2, kl, kc, 1.25f * u_, kw);
+        }
         SDL_FRect x{row.x + row.w - 26 * u_, row.y + (row.h - 20 * u_) / 2, 20 * u_, 20 * u_};
         if (hovered(x)) fill(x, kOxblood);
         text(x.x + 6 * u_, x.y + 6 * u_, "x", kCream, 1.25f * u_);
@@ -486,7 +595,7 @@ void App::drawBox(Project& p, const BoxDef& def, const SDL_FRect& r) {
         });
         if (lower(fs::path(name).extension().string()) == ".txt") {  // a text sheet: edit it
             const float ew = textW("edit", 1.25f * u_) + 12 * u_;
-            SDL_FRect e{row.x + row.w - kw - 40 * u_ - ew - 10 * u_, row.y + (row.h - 20 * u_) / 2, ew, 20 * u_};
+            SDL_FRect e{row.x + row.w - kw - 40 * u_ - ew - 10 * u_, row.y + (row.h - 20 * u_) / 2, ew, 20 * u_};  // left of the label
             fill(e, hovered(e) ? kHover : kBar);
             text(e.x + 6 * u_, e.y + 6 * u_, "edit", kSand, 1.25f * u_);
             hit(e, [this, box, name](float, float) {

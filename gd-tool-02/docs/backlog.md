@@ -40,6 +40,12 @@ Status: ✅ done · 🟡 in progress / partly done · ❌ not started · ⏸️ 
 | R29 | No lyrics -> no vocals track (band view, Fine tuning, Export) | ✅ | vocals strip / tab only when lyricsChoice != none (or the chart has vocals) |
 | R30 | Screens layout board: every screen as movable blocks, for the owner to reorganize; then rebuild the app to match | 🟡 | Board: https://claude.ai/artifact/T6m7EsPGnQwWF5rnFeMc9C (18 frames, 327 blocks, built 2026-11-19). Waiting for the owner's layout |
 | R31 | Guitar Pro 5 (.gp5) support, proven end to end with a real file (Song home, forge, tests on Mac and Linux) | ✅ | Real GP5 of the Evil Papagali tab (guitar + drums tracks): 73% match, 1245 guitar notes, drums driven by its drum track. Fixed: copies of one file in several boxes were aligned twice (now matched by content). Tests: python/tests/test_gp5.py |
+| R32 | A Guitar Pro / MIDI score fills every box it has an instrument for (guitar, bass, drums), shown in each | ✅ | python/inspect_sheet.py (Inspect job) copies the file to every box it has an instrument for; clears that box's absent tick; works for charts too |
+| R33 | Several guitar tracks: prefer the solo / lead one; when unsure, the user picks the track (FORGE waits) | ✅ | sheets.default_track (lead / solo / solista / guitar 1 by name); track picker on the row, saved as sheets.<box>_track; FORGE blocked until picked |
+| R34 | Song forge: a "Difficulties" view, Easy..Expert side by side for one instrument | ✅ | forgeView_ 2 (drawDifficulties) |
+| R35 | Remove the forge settings panel (Mixer and the not-forged screen); keep the defaults | ✅ | drawForgeSettings removed (Mixer and not-forged screen); defaults stay (steady drums / riffs, auto genre) |
+| R36 | Keys and "other" are never separate stems: always inside the rest of the mix | ✅ | separate_stems merges piano into other; old projects' keys.wav mixed into other in the player |
+| R37 | Guitar Pro 4 (.gp4) support, proven like GP5 | ✅ | every Guitar Pro test runs for .gp4 and .gp5; a real GP4 of Evil Papagali (2 guitars, bass, drums) filled all boxes, asked for the guitar, drove guitar / bass / drums |
 
 ## Later
 

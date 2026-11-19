@@ -143,7 +143,8 @@ class ScoreOnly:
         return getattr(self.guide, attr)
 
 
-def install_references(refs: dict[str, Path], fidelity_of: dict[str, str] | None = None) -> None:
+def install_references(refs: dict[str, Path], fidelity_of: dict[str, str] | None = None,
+                       chosen: dict[str, int] | None = None) -> None:
     """The engine takes one score with a track -> instrument map. Song home gives one file
     per instrument, so its load_guides is replaced by one that loads each file for its own
     instrument and merges the guides. `fidelity`: per instrument (text tabs: "corrigir")."""
@@ -168,7 +169,7 @@ def install_references(refs: dict[str, Path], fidelity_of: dict[str, str] | None
             try:  # one bad file must not stop the forge: it is skipped, the stems are charted alone
                 mapping: dict[int, str] = {}
                 for instrument in instruments:
-                    found_tracks = sheets.pick_tracks(file, instrument)
+                    found_tracks = sheets.pick_tracks(file, instrument, (chosen or {}).get(instrument))
                     if not found_tracks:
                         say(f"{file.name}: no track in it fits the {instrument}")
                     mapping.update(found_tracks)
@@ -292,6 +293,7 @@ class Plan:
         sheets_doc = doc.get("sheets") or {}
         self.refs: dict[str, Path] = {}
         self.fidelity: dict[str, str] = {}
+        self.tracks: dict[str, int] = {}  # the score track the user picked, per box
         self.charts: dict[str, Path] = {}
         self.chords: Path | None = None
         chord_boxes: set[str] = set()
@@ -307,6 +309,9 @@ class Plan:
                     else:
                         self.refs[box] = text_tab_score(project, box, file) if kind == "texttab" else file
                         self.fidelity[box] = "seguir"  # the tab's notes, not the heard ones
+                        picked = sheets.chosen_track(doc, box, file.name)
+                        if picked is not None:
+                            self.tracks[box] = picked
                 elif kind == "chords":
                     chord_boxes.add(box)
                     self.chords = self.chords or file
@@ -386,7 +391,7 @@ def run_engine(project: Path, plan: Plan, progress: Progress) -> Path:
     block_downloads()
     patch_engine_audio()
     if plan.refs:
-        install_references(plan.refs, plan.fidelity)
+        install_references(plan.refs, plan.fidelity, plan.tracks)
     from ai_charter.pipeline import Options, run
 
     doc = yaml.safe_load((project / "project.yaml").read_text(encoding="utf-8")) or {}

@@ -28,6 +28,8 @@ public:
 
     // Loads a .wav (keeps the order mix, guitar, bass, drums, keys, vocals, other).
     bool add(const std::string& name, const std::string& path, std::string& error);
+    // Mixes another .wav into a loaded stem (keys into "other": R36). Same format only.
+    bool mixInto(const std::string& name, const std::string& path, std::string& error);
     void clear();
     bool has(const std::string& name) const;
 

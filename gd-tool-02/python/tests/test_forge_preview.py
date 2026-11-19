@@ -104,7 +104,7 @@ def test_a_score_in_several_boxes_is_aligned_once(monkeypatch, tmp_path):
     score, riff = tmp_path / "full.gp5", tmp_path / "riff.mid"
     monkeypatch.setattr(reference, "load_guides", fake_load_guides)
     monkeypatch.setattr(forge.sheets, "pick_tracks",
-                        lambda f, inst: {{"guitar": 0, "drums": 3, "bass": 1}[inst]: inst})
+                        lambda f, inst, chosen=None: {{"guitar": 0, "drums": 3, "bass": 1}[inst]: inst})
     forge.install_references({"guitar": score, "drums": score, "bass": riff}, {"bass": "corrigir"})
     guides = reference.load_guides(None, None, None, 0, None, None, log=lambda m: None)
     unwrap = {k: getattr(v, "guide", v) for k, v in guides.items()}

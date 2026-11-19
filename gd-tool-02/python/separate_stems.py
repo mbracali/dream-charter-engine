@@ -119,8 +119,12 @@ def separate_demucs(audio: np.ndarray, sr: int, out_dir: Path, model_name: str,
     with torch.no_grad():
         sources = apply_model(model, wav[None], device=device, progress=True, split=True, overlap=0.25)[0]
     sources = sources * (ref.std() + 1e-8) + ref.mean()
-    for theirs, tensor in zip(model.sources, sources):
-        write_stem(out_dir, DEMUCS_NAMES.get(theirs, theirs), tensor.cpu().numpy().T, model.samplerate)
+    named = {DEMUCS_NAMES.get(theirs, theirs): tensor.cpu().numpy().T for theirs, tensor in zip(model.sources, sources)}
+    # Keys are never charted: the piano stays inside the rest of the mix ("other").
+    if "keys" in named and "other" in named:
+        named["other"] = named["other"] + named.pop("keys")
+    for name, audio in named.items():
+        write_stem(out_dir, name, audio, model.samplerate)
 
 
 def separate_simple(audio: np.ndarray, sr: int, out_dir: Path) -> None:
