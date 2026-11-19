@@ -58,6 +58,7 @@ class PitchedDetection:
     onset_model: bool = False        # o modelo de ataques (onset_model.py) escolhe os picos que são notas
     reduce_model: bool = False       # Hard/Medium/Easy pelo modelo de redução (charting/fret_reduce.py)
     pyin: bool = False               # mede a nota de cada ataque também pelo pYIN (para o modelo de altura)
+    repeat_similarity: float = 0.0   # compassos parecidos saem iguais, nota a nota por maioria (charting/drum_repeats.py); 0 = desligado
 
 
 @dataclass

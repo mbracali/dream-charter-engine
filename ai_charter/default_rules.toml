@@ -50,6 +50,7 @@ sustain_model = false        # o modelo de sustain decide quais notas são longa
 onset_model = false          # o modelo de ataques escolhe os picos que são notas, em vez do onset_delta
 reduce_model = false         # Hard/Medium/Easy pelo modelo aprendido da Harmonix, em vez de [frets.*]
 pyin = false                 # mede cada nota também pelo pYIN, uma segunda opinião para o modelo de altura
+repeat_similarity = 0.0      # compassos parecidos saem iguais, nota a nota por maioria, como a bateria (charting/drum_repeats.py); 0 = desligado
 
 [detection.bass]
 fmin = "E1"
@@ -92,6 +93,7 @@ onset_model = true
 reduce_model = true
 # O pYIN acerta 34% das notas em que o modelo de altura erra: entra como medida dele (~7 s por música).
 pyin = true
+repeat_similarity = 0.0      # compassos parecidos saem iguais, nota a nota por maioria, como a bateria (charting/drum_repeats.py); 0 = desligado
 
 [detection.keys]
 fmin = "A1"
@@ -120,6 +122,7 @@ sustain_model = false
 onset_model = false
 reduce_model = false
 pyin = false
+repeat_similarity = 0.0      # compassos parecidos saem iguais, nota a nota por maioria, como a bateria (charting/drum_repeats.py); 0 = desligado
 
 # ---------------------------------------------------------------------------
 # Detecção de bateria: cada peça é encontrada numa faixa de frequência (Hz)

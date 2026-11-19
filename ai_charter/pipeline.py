@@ -31,7 +31,7 @@ from ai_charter.charting.common import (
 )
 from ai_charter.charting.chords import label_chords
 from ai_charter.charting.drum_reduce import bpm_from_tempo
-from ai_charter.charting.drum_repeats import consolidate_repeats
+from ai_charter.charting.drum_repeats import consolidate_pitched, consolidate_repeats
 from ai_charter.charting.drums import build_drum_track
 from ai_charter.charting.frets import build_fret_track
 from ai_charter.charting.guitar_select import GuitarSource, merge_guitars
@@ -185,6 +185,9 @@ def chart_pitched(stems: list[Path], instrument: str, tempo: TempoMap, rules: Ru
             cands = guide(cands, stem.stem if len(stems) > 1 else "", log)
         sources.append(GuitarSource(stem.stem, cands, y, sr))
     cands, chosen = merge_guitars(sources, tempo, rules.general.resolution, rules.guitar_selection)
+    if cfg.repeat_similarity > 0:   # um riff que se repete sai igual (como a bateria)
+        cands = consolidate_pitched(cands, tempo.bar_starts() * rules.general.resolution, rules.general.resolution,
+                                    cfg.repeat_similarity)
     reducer = None
     if cfg.reduce_model:
         from ai_charter.charting.fret_reduce import ReduceModel

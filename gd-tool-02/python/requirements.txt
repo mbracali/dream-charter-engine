@@ -1,0 +1,16 @@
+demucs==4.1.0
+librosa==1.0.0
+mutagen==1.48.1
+numpy==2.5.4
+pillow==13.0.0
+PyYAML==6.0.3
+scipy==1.18.1
+soundfile==0.14.0
+torch==2.15.0
+-e ..  # dream-charter-engine itself (Forge charts with it)
+beat-this==1.1.0
+einops==0.8.2
+rotary-embedding-torch==0.9.2
+soxr==1.1.0
+adtof-pytorch @ git+https://github.com/xavriley/ADTOF-pytorch  # CC BY-NC-SA (non-commercial)
+pytest
